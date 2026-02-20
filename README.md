@@ -82,7 +82,7 @@ macOS notifications display:
 
 ### Installation
 ```bash
-git clone <this-repo>
+git clone git@github.com:luisalonsobr/TaskRetreiver.git
 cd task-manager
 pip install -r requirements.txt
 ```
