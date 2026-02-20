@@ -1,4 +1,4 @@
-# WhatsApp Task Manager
+# WhatsApp Task Retriever
 
 Personal note: 
 Make no mistake, this is AI SLOP. I leave real coding for paying bills. However it does what I need, I hope it can be useful for those reading this. 
