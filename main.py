@@ -162,6 +162,16 @@ class WhatsAppTaskManager:
             
         print("\n🎉 All systems working!")
         return True
+
+    def test_notifications(self) -> bool:
+        """Run notification-only diagnostics."""
+        print("🔔 Testing notification delivery...")
+        ok = self.notifier.test_notifications()
+        if ok:
+            print("✅ Notification test passed")
+        else:
+            print("❌ Notification test failed")
+        return ok
     
     def _format_timestamp(self, timestamp: str) -> str:
         """Format timestamp for display"""
@@ -192,6 +202,7 @@ def main():
     
     # Test command
     subparsers.add_parser('test', help='Test system components')
+    subparsers.add_parser('notify-test', help='Test notification delivery only')
     
     args = parser.parse_args()
     
@@ -212,6 +223,9 @@ def main():
             manager.watch_mode()
         elif args.command == 'test':
             if not manager.test_system():
+                sys.exit(1)
+        elif args.command == 'notify-test':
+            if not manager.test_notifications():
                 sys.exit(1)
             
     except KeyboardInterrupt:
