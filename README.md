@@ -171,8 +171,10 @@ With macOS integration enabled:
 ### Monitored Contacts
 ```python
 MONITORED_NUMBERS = [
-    "5511XXXXXXX@s.whatsapp.net",
-    # Add your contacts here
+    "YYZZZXXXXXXXXXX",
+    "YYZZZXXXXXXXXXX@s.whatsapp.net",
+    # Add your contacts here country/area/number   only numbers, no +
+    # plain number or full JID are both accepted
 ]
 ```
 

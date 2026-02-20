@@ -19,7 +19,25 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 
 # Monitored contacts and groups (comma-separated in env)
 _monitored = os.getenv("MONITORED_NUMBERS", "")
-MONITORED_NUMBERS = [s.strip() for s in _monitored.split(",") if s.strip()]
+
+def _normalize_monitored_number(value: str) -> str:
+    """Accept plain phone numbers and normalize to WhatsApp JID format."""
+    raw = value.strip()
+    if not raw:
+        return ""
+    if "@" in raw:
+        return raw
+
+    digits_only = "".join(ch for ch in raw if ch.isdigit())
+    if not digits_only:
+        return ""
+    return f"{digits_only}@s.whatsapp.net"
+
+MONITORED_NUMBERS = []
+for _entry in _monitored.split(","):
+    _normalized = _normalize_monitored_number(_entry)
+    if _normalized:
+        MONITORED_NUMBERS.append(_normalized)
 
 _monitored_keywords = os.getenv("MONITORED_GROUP_KEYWORDS", "")
 MONITORED_GROUP_KEYWORDS = [s.strip() for s in _monitored_keywords.split(",") if s.strip()]
