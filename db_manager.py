@@ -84,7 +84,6 @@ class DatabaseManager:
             JOIN chats c ON m.chat_jid = c.jid
             LEFT JOIN taskdb.processed_messages p ON p.message_id = m.id
             WHERE m.chat_jid IN ({jid_placeholders})
-            AND m.is_from_me = 0
             AND m.content IS NOT NULL
             AND m.content != ''
             AND p.message_id IS NULL
