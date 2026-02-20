@@ -2,19 +2,22 @@ import subprocess
 import os
 import shutil
 import time
+import sys
+import shlex
 from typing import Dict
 
 class MacNotifier:
     def __init__(self):
-        self.script_path = "/Users/hardlou/dev/task-manager/main.py"
+        self.script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")
+        self.python_cmd = sys.executable or "python3"
         
-    def send_task_notification(self, task_data: Dict, message: Dict):
+    def send_task_notification(self, task_data: Dict, message: Dict, task_id: int = None):
         """Send a clickable macOS notification for a new task"""
         try:
             # Prepare notification content
             title = self._escape_applescript_string(f"Nova Tarefa - {message['chat_name']}")
             subtitle = self._escape_applescript_string(f"De: {message['sender']}")
-            message_text = task_data['task_description']
+            message_text = str(task_data['task_description'])
             
             # Priority emoji
             priority_emoji = {
@@ -28,11 +31,12 @@ class MacNotifier:
             # Add deadline if present
             if task_data.get('deadline'):
                 body += f"\n⏰ Prazo: {task_data['deadline']}"
-            body = self._escape_applescript_string(body)
+            body_for_applescript = self._escape_applescript_string(body)
+            execute_cmd = self._build_gui_launch_command(task_id)
             
             # Keep this as a single line for robust parsing.
             applescript = (
-                f'display notification "{body}" '
+                f'display notification "{body_for_applescript}" '
                 f'with title "{title}" subtitle "{subtitle}"'
             )
 
@@ -40,6 +44,7 @@ class MacNotifier:
                 title=f"Nova Tarefa - {message['chat_name']}",
                 subtitle=f"De: {message['sender']}",
                 message=body,
+                execute=execute_cmd,
             )
             if not sent:
                 sent = self._send_with_osascript(applescript)
@@ -77,7 +82,12 @@ class MacNotifier:
                 f'display notification "{self._escape_applescript_string(body)}" '
                 f'with title "{self._escape_applescript_string(title)}"'
             )
-            if not self._send_with_terminal_notifier(title=title, subtitle="", message=body):
+            if not self._send_with_terminal_notifier(
+                title=title,
+                subtitle="",
+                message=body,
+                execute=self._build_gui_launch_command(None),
+            ):
                 self._send_with_osascript(applescript)
 
         except Exception as e:
@@ -132,7 +142,13 @@ class MacNotifier:
             print(f"⚠️ osascript notification failed with code {result.returncode}")
         return False
 
-    def _send_with_terminal_notifier(self, title: str, subtitle: str, message: str) -> bool:
+    def _send_with_terminal_notifier(
+        self,
+        title: str,
+        subtitle: str,
+        message: str,
+        execute: str = "",
+    ) -> bool:
         """Fallback notifier if terminal-notifier is installed."""
         binary = self._find_terminal_notifier()
         if not binary:
@@ -149,6 +165,8 @@ class MacNotifier:
         ]
         if subtitle:
             cmd.extend(["-subtitle", subtitle])
+        if execute:
+            cmd.extend(["-execute", execute])
 
         result = subprocess.run(cmd, check=False, capture_output=True, text=True)
         if result.returncode == 0:
@@ -165,6 +183,18 @@ class MacNotifier:
         else:
             print(f"⚠️ terminal-notifier exit code: {result.returncode}")
         return False
+
+    def _build_gui_launch_command(self, task_id: int = None) -> str:
+        """Build shell-safe command to open the GUI, optionally focused on a task."""
+        app_path = os.path.expanduser("~/Applications/WhatsApp Task Manager.app")
+        if os.path.isdir(app_path):
+            parts = ["open", "-a", app_path, "--args"]
+        else:
+            parts = [self.python_cmd, self.script_path, "gui"]
+
+        if task_id is not None:
+            parts.extend(["--focus-task", str(task_id)])
+        return " ".join(shlex.quote(part) for part in parts)
 
     def _find_terminal_notifier(self) -> str:
         """Find terminal-notifier across common Homebrew locations."""

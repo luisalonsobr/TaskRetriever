@@ -10,6 +10,7 @@ This tool solves the common problem of tasks and reminders getting lost in Whats
 - **Uses local AI** (Ollama + Qwen3 4B) to detect tasks in Portuguese 
 - **Sends macOS notifications** when tasks are found
 - **Provides a simple CLI** to manage and complete tasks
+- **Provides a desktop GUI** to view and click tasks
 - **Runs as a background daemon** for continuous monitoring
 
 Perfect for busy professionals who receive work requests, family coordination, or project tasks through WhatsApp.
@@ -83,6 +84,15 @@ cd task-manager
 pip install -r requirements.txt
 ```
 
+### macOS Auto-Start + GUI Icon
+```bash
+# Installs login auto-start (background watch) + app icon in ~/Applications
+./install_macos_integration.sh
+
+# Remove integration later
+./uninstall_macos_integration.sh
+```
+
 ### Configuration
 Edit `config.py` to set:
 - Your monitored phone numbers
@@ -101,6 +111,9 @@ python main.py scan
 # List pending tasks
 python main.py list
 
+# Open desktop GUI task list
+python main.py gui
+
 # Mark task as completed
 python main.py done <task_id>
 
@@ -111,6 +124,11 @@ python main.py watch
 ./start_daemon.sh    # Start background
 ./stop_daemon.sh     # Stop background
 ```
+
+With macOS integration enabled:
+- scanning/notifications run automatically on login (LaunchAgent)
+- clicking a task notification opens the GUI (focuses that task when available)
+- you can open the GUI anytime via `WhatsApp Task Manager.app` (Finder/Spotlight)
 
 ## 🔧 Technical Details
 
@@ -143,9 +161,9 @@ python main.py watch
 
 ### Notification System
 - **Platform**: macOS native notifications
-- **Method**: AppleScript integration
-- **Features**: Clickable, priority colors, sound alerts
-- **Persistence**: Notifications link to task management CLI
+- **Method**: `terminal-notifier` primary, AppleScript fallback
+- **Features**: Priority indicators, sender/chat context, click-to-open GUI
+- **Persistence**: Click task notifications to open/focus the desktop task manager
 
 ## 🎛️ Configuration Options
 

@@ -6,6 +6,10 @@ import argparse
 from datetime import datetime
 from typing import List
 
+tk = None
+ttk = None
+messagebox = None
+
 from db_manager import DatabaseManager
 from task_detector import TaskDetector
 from notifier import MacNotifier
@@ -44,7 +48,7 @@ class WhatsAppTaskManager:
                     task_id = self.db.save_task(message, task_data)
                     
                     # Send notification
-                    self.notifier.send_task_notification(task_data, message)
+                    self.notifier.send_task_notification(task_data, message, task_id=task_id)
                     
                     tasks_detected += 1
                     print(f"✅ Task #{task_id} detected: {task_data['task_description']}")
@@ -183,6 +187,170 @@ class WhatsAppTaskManager:
         except:
             return timestamp
 
+
+class TaskManagerGUI:
+    def __init__(self, manager: WhatsAppTaskManager, focus_task_id: int = None):
+        global tk, ttk, messagebox
+        if tk is None or ttk is None or messagebox is None:
+            import tkinter as _tk
+            from tkinter import ttk as _ttk, messagebox as _messagebox
+            tk, ttk, messagebox = _tk, _ttk, _messagebox
+
+        self.manager = manager
+        self.focus_task_id = focus_task_id
+        self.root = tk.Tk()
+        self.root.title("WhatsApp Task Manager")
+        self.root.geometry("1100x620")
+        self.tasks_by_id = {}
+
+        self._build_ui()
+        self.refresh_tasks()
+
+    def _build_ui(self):
+        container = ttk.Frame(self.root, padding=12)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        controls = ttk.Frame(container)
+        controls.pack(fill=tk.X, pady=(0, 8))
+
+        ttk.Button(controls, text="Refresh", command=self.refresh_tasks).pack(side=tk.LEFT)
+        ttk.Button(controls, text="Scan Now", command=self.scan_now).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(controls, text="Mark Done", command=self.mark_selected_done).pack(side=tk.LEFT, padx=(8, 0))
+
+        self.status_var = tk.StringVar(value="Ready")
+        ttk.Label(controls, textvariable=self.status_var).pack(side=tk.RIGHT)
+
+        columns = ("id", "priority", "task", "chat", "sender", "deadline", "timestamp")
+        self.tree = ttk.Treeview(container, columns=columns, show="headings", height=14)
+        self.tree.heading("id", text="ID")
+        self.tree.heading("priority", text="Priority")
+        self.tree.heading("task", text="Task")
+        self.tree.heading("chat", text="Chat")
+        self.tree.heading("sender", text="Sender")
+        self.tree.heading("deadline", text="Deadline")
+        self.tree.heading("timestamp", text="Created")
+
+        self.tree.column("id", width=60, stretch=False, anchor=tk.CENTER)
+        self.tree.column("priority", width=90, stretch=False, anchor=tk.CENTER)
+        self.tree.column("task", width=330)
+        self.tree.column("chat", width=170)
+        self.tree.column("sender", width=170)
+        self.tree.column("deadline", width=140, stretch=False)
+        self.tree.column("timestamp", width=150, stretch=False)
+
+        self.tree.pack(fill=tk.BOTH, expand=True)
+        self.tree.bind("<<TreeviewSelect>>", self._on_task_selected)
+        self.tree.bind("<Double-1>", lambda _event: self.mark_selected_done())
+
+        details_frame = ttk.LabelFrame(container, text="Task Details", padding=8)
+        details_frame.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+        self.details = tk.Text(details_frame, height=10, wrap=tk.WORD)
+        self.details.pack(fill=tk.BOTH, expand=True)
+        self.details.configure(state=tk.DISABLED)
+
+    def refresh_tasks(self):
+        for item_id in self.tree.get_children():
+            self.tree.delete(item_id)
+
+        tasks = self.manager.db.get_pending_tasks()
+        self.tasks_by_id = {task["id"]: task for task in tasks}
+
+        for task in tasks:
+            self.tree.insert(
+                "",
+                tk.END,
+                iid=str(task["id"]),
+                values=(
+                    task["id"],
+                    task.get("priority", "média"),
+                    task.get("task_description", ""),
+                    task.get("chat_name", ""),
+                    task.get("sender", ""),
+                    task.get("deadline") or "-",
+                    self.manager._format_timestamp(str(task.get("timestamp", ""))),
+                ),
+            )
+
+        count = len(tasks)
+        self.status_var.set(f"{count} pending task{'s' if count != 1 else ''}")
+
+        if self.focus_task_id and self.focus_task_id in self.tasks_by_id:
+            focus_id = str(self.focus_task_id)
+            self.tree.selection_set(focus_id)
+            self.tree.focus(focus_id)
+            self.tree.see(focus_id)
+            self._on_task_selected()
+            self.focus_task_id = None
+        elif tasks:
+            first_id = str(tasks[0]["id"])
+            self.tree.selection_set(first_id)
+            self.tree.focus(first_id)
+            self._on_task_selected()
+        else:
+            self._set_details("No pending tasks.")
+
+    def scan_now(self):
+        try:
+            found = self.manager.scan_for_tasks()
+            self.refresh_tasks()
+            self.status_var.set(f"Scan complete. {found} new task{'s' if found != 1 else ''} found")
+        except Exception as e:
+            messagebox.showerror("Scan Failed", str(e))
+
+    def mark_selected_done(self):
+        task_id = self._get_selected_task_id()
+        if task_id is None:
+            messagebox.showinfo("No Selection", "Select a task first.")
+            return
+
+        if not self.manager.mark_task_done(task_id):
+            messagebox.showerror("Failed", f"Task #{task_id} not found")
+            return
+
+        self.refresh_tasks()
+
+    def _get_selected_task_id(self):
+        selection = self.tree.selection()
+        if not selection:
+            return None
+        return int(selection[0])
+
+    def _on_task_selected(self, _event=None):
+        task_id = self._get_selected_task_id()
+        if task_id is None:
+            self._set_details("No task selected.")
+            return
+
+        task = self.tasks_by_id.get(task_id)
+        if not task:
+            self._set_details("Task details not available.")
+            return
+
+        content = "\n".join(
+            [
+                f"Task #{task['id']}",
+                f"Description: {task.get('task_description', '')}",
+                f"Priority: {task.get('priority', 'média')}",
+                f"Chat: {task.get('chat_name', '')}",
+                f"Sender: {task.get('sender', '')}",
+                f"Deadline: {task.get('deadline') or '-'}",
+                f"Message time: {self.manager._format_timestamp(str(task.get('timestamp', '')))}",
+                "",
+                "Original message:",
+                task.get("message_content", ""),
+            ]
+        )
+        self._set_details(content)
+
+    def _set_details(self, text: str):
+        self.details.configure(state=tk.NORMAL)
+        self.details.delete("1.0", tk.END)
+        self.details.insert(tk.END, text)
+        self.details.configure(state=tk.DISABLED)
+
+    def run(self):
+        self.root.mainloop()
+
 def main():
     parser = argparse.ArgumentParser(description='WhatsApp Task Manager')
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
@@ -203,6 +371,8 @@ def main():
     # Test command
     subparsers.add_parser('test', help='Test system components')
     subparsers.add_parser('notify-test', help='Test notification delivery only')
+    gui_parser = subparsers.add_parser('gui', help='Open task manager GUI')
+    gui_parser.add_argument('--focus-task', type=int, help='Focus/select a specific task ID')
     
     args = parser.parse_args()
     
@@ -227,6 +397,9 @@ def main():
         elif args.command == 'notify-test':
             if not manager.test_notifications():
                 sys.exit(1)
+        elif args.command == 'gui':
+            gui = TaskManagerGUI(manager, focus_task_id=getattr(args, "focus_task", None))
+            gui.run()
             
     except KeyboardInterrupt:
         print("\n👋 Interrupted by user")
