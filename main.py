@@ -212,9 +212,14 @@ class TaskManagerGUI:
         self.root.geometry("1100x620")
         self.tasks_by_id = {}
         self.show_done_var = tk.BooleanVar(value=False)
+        self.auto_refresh_var = tk.BooleanVar(value=True)
+        self.refresh_interval_var = tk.IntVar(value=30)
+        self._auto_refresh_job = None
 
         self._build_ui()
         self.refresh_tasks()
+        self._schedule_auto_refresh()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_ui(self):
         container = ttk.Frame(self.root, padding=12)
@@ -233,6 +238,22 @@ class TaskManagerGUI:
             variable=self.show_done_var,
             command=self.refresh_tasks,
         ).pack(side=tk.LEFT, padx=(12, 0))
+        ttk.Checkbutton(
+            controls,
+            text="Auto refresh",
+            variable=self.auto_refresh_var,
+            command=self._on_auto_refresh_toggle,
+        ).pack(side=tk.LEFT, padx=(12, 0))
+        ttk.Label(controls, text="Every (s):").pack(side=tk.LEFT, padx=(8, 0))
+        interval_spin = ttk.Spinbox(
+            controls,
+            from_=3,
+            to=300,
+            width=5,
+            textvariable=self.refresh_interval_var,
+            command=self._on_interval_change,
+        )
+        interval_spin.pack(side=tk.LEFT, padx=(4, 0))
 
         self.status_var = tk.StringVar(value="Ready")
         ttk.Label(controls, textvariable=self.status_var).pack(side=tk.RIGHT)
@@ -402,6 +423,41 @@ class TaskManagerGUI:
 
     def run(self):
         self.root.mainloop()
+
+    def _on_auto_refresh_toggle(self):
+        if self.auto_refresh_var.get():
+            self._schedule_auto_refresh()
+        else:
+            self._cancel_auto_refresh()
+
+    def _on_interval_change(self):
+        if self.auto_refresh_var.get():
+            self._schedule_auto_refresh()
+
+    def _schedule_auto_refresh(self):
+        self._cancel_auto_refresh()
+        if not self.auto_refresh_var.get():
+            return
+        try:
+            interval_seconds = max(3, int(self.refresh_interval_var.get()))
+        except Exception:
+            interval_seconds = 10
+            self.refresh_interval_var.set(interval_seconds)
+        self._auto_refresh_job = self.root.after(interval_seconds * 1000, self._auto_refresh_tick)
+
+    def _auto_refresh_tick(self):
+        self._auto_refresh_job = None
+        self.refresh_tasks()
+        self._schedule_auto_refresh()
+
+    def _cancel_auto_refresh(self):
+        if self._auto_refresh_job is not None:
+            self.root.after_cancel(self._auto_refresh_job)
+            self._auto_refresh_job = None
+
+    def _on_close(self):
+        self._cancel_auto_refresh()
+        self.root.destroy()
 
 def main():
     parser = argparse.ArgumentParser(description='WhatsApp Task Manager')
