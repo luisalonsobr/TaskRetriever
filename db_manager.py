@@ -142,12 +142,20 @@ class DatabaseManager:
         conn.close()
         return task_id
     
-    def get_pending_tasks(self) -> List[Dict]:
-        """Get all pending tasks"""
+    def get_tasks(self, include_completed: bool = False) -> List[Dict]:
+        """Get tasks, optionally including completed ones."""
         conn = sqlite3.connect(TASKS_DB)
-        cursor = conn.execute('''
+        if include_completed:
+            cursor = conn.execute('''
             SELECT id, chat_name, sender, task_description, priority, 
-                   deadline, timestamp, message_content
+                   deadline, timestamp, message_content, completed
+            FROM tasks
+            ORDER BY created_at DESC
+        ''')
+        else:
+            cursor = conn.execute('''
+            SELECT id, chat_name, sender, task_description, priority, 
+                   deadline, timestamp, message_content, completed
             FROM tasks 
             WHERE completed = FALSE 
             ORDER BY created_at DESC
@@ -165,14 +173,28 @@ class DatabaseManager:
                 'priority': row[4],
                 'deadline': row[5],
                 'timestamp': row[6],
-                'message_content': row[7]
+                'message_content': row[7],
+                'completed': bool(row[8]),
             })
         return tasks
+
+    def get_pending_tasks(self) -> List[Dict]:
+        """Get all pending tasks."""
+        return self.get_tasks(include_completed=False)
     
     def mark_task_completed(self, task_id: int) -> bool:
         """Mark a task as completed"""
         conn = sqlite3.connect(TASKS_DB)
         cursor = conn.execute("UPDATE tasks SET completed = TRUE WHERE id = ?", (task_id,))
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return success
+
+    def mark_task_not_completed(self, task_id: int) -> bool:
+        """Mark a task as not completed."""
+        conn = sqlite3.connect(TASKS_DB)
+        cursor = conn.execute("UPDATE tasks SET completed = FALSE WHERE id = ?", (task_id,))
         success = cursor.rowcount > 0
         conn.commit()
         conn.close()

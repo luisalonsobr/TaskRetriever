@@ -105,6 +105,15 @@ class WhatsAppTaskManager:
         else:
             print(f"❌ Task #{task_id} not found")
         return success
+
+    def mark_task_not_done(self, task_id: int) -> bool:
+        """Mark a task as not completed."""
+        success = self.db.mark_task_not_completed(task_id)
+        if success:
+            print(f"↩️ Task #{task_id} marked as not completed!")
+        else:
+            print(f"❌ Task #{task_id} not found")
+        return success
     
     def watch_mode(self):
         """Run in daemon mode, continuously scanning for tasks"""
@@ -202,6 +211,7 @@ class TaskManagerGUI:
         self.root.title("WhatsApp Task Manager")
         self.root.geometry("1100x620")
         self.tasks_by_id = {}
+        self.show_done_var = tk.BooleanVar(value=False)
 
         self._build_ui()
         self.refresh_tasks()
@@ -216,13 +226,21 @@ class TaskManagerGUI:
         ttk.Button(controls, text="Refresh", command=self.refresh_tasks).pack(side=tk.LEFT)
         ttk.Button(controls, text="Scan Now", command=self.scan_now).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(controls, text="Mark Done", command=self.mark_selected_done).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(controls, text="Mark Not Done", command=self.mark_selected_not_done).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Checkbutton(
+            controls,
+            text="Show done tasks",
+            variable=self.show_done_var,
+            command=self.refresh_tasks,
+        ).pack(side=tk.LEFT, padx=(12, 0))
 
         self.status_var = tk.StringVar(value="Ready")
         ttk.Label(controls, textvariable=self.status_var).pack(side=tk.RIGHT)
 
-        columns = ("id", "priority", "task", "chat", "sender", "deadline", "timestamp")
+        columns = ("id", "status", "priority", "task", "chat", "sender", "deadline", "timestamp")
         self.tree = ttk.Treeview(container, columns=columns, show="headings", height=14)
         self.tree.heading("id", text="ID")
+        self.tree.heading("status", text="Status")
         self.tree.heading("priority", text="Priority")
         self.tree.heading("task", text="Task")
         self.tree.heading("chat", text="Chat")
@@ -231,16 +249,17 @@ class TaskManagerGUI:
         self.tree.heading("timestamp", text="Created")
 
         self.tree.column("id", width=60, stretch=False, anchor=tk.CENTER)
+        self.tree.column("status", width=90, stretch=False, anchor=tk.CENTER)
         self.tree.column("priority", width=90, stretch=False, anchor=tk.CENTER)
-        self.tree.column("task", width=330)
-        self.tree.column("chat", width=170)
-        self.tree.column("sender", width=170)
+        self.tree.column("task", width=300)
+        self.tree.column("chat", width=155)
+        self.tree.column("sender", width=155)
         self.tree.column("deadline", width=140, stretch=False)
         self.tree.column("timestamp", width=150, stretch=False)
 
         self.tree.pack(fill=tk.BOTH, expand=True)
         self.tree.bind("<<TreeviewSelect>>", self._on_task_selected)
-        self.tree.bind("<Double-1>", lambda _event: self.mark_selected_done())
+        self.tree.bind("<Double-1>", self._on_double_click)
 
         details_frame = ttk.LabelFrame(container, text="Task Details", padding=8)
         details_frame.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
@@ -252,7 +271,7 @@ class TaskManagerGUI:
         for item_id in self.tree.get_children():
             self.tree.delete(item_id)
 
-        tasks = self.manager.db.get_pending_tasks()
+        tasks = self.manager.db.get_tasks(include_completed=self.show_done_var.get())
         self.tasks_by_id = {task["id"]: task for task in tasks}
 
         for task in tasks:
@@ -262,6 +281,7 @@ class TaskManagerGUI:
                 iid=str(task["id"]),
                 values=(
                     task["id"],
+                    "Done" if task.get("completed") else "Pending",
                     task.get("priority", "média"),
                     task.get("task_description", ""),
                     task.get("chat_name", ""),
@@ -271,8 +291,15 @@ class TaskManagerGUI:
                 ),
             )
 
-        count = len(tasks)
-        self.status_var.set(f"{count} pending task{'s' if count != 1 else ''}")
+        total_count = len(tasks)
+        done_count = sum(1 for task in tasks if task.get("completed"))
+        pending_count = total_count - done_count
+        if self.show_done_var.get():
+            self.status_var.set(
+                f"{pending_count} pending / {done_count} done ({total_count} total)"
+            )
+        else:
+            self.status_var.set(f"{pending_count} pending task{'s' if pending_count != 1 else ''}")
 
         if self.focus_task_id and self.focus_task_id in self.tasks_by_id:
             focus_id = str(self.focus_task_id)
@@ -309,11 +336,35 @@ class TaskManagerGUI:
 
         self.refresh_tasks()
 
+    def mark_selected_not_done(self):
+        task_id = self._get_selected_task_id()
+        if task_id is None:
+            messagebox.showinfo("No Selection", "Select a task first.")
+            return
+
+        if not self.manager.mark_task_not_done(task_id):
+            messagebox.showerror("Failed", f"Task #{task_id} not found")
+            return
+
+        self.refresh_tasks()
+
     def _get_selected_task_id(self):
         selection = self.tree.selection()
         if not selection:
             return None
         return int(selection[0])
+
+    def _on_double_click(self, _event=None):
+        task_id = self._get_selected_task_id()
+        if task_id is None:
+            return
+        task = self.tasks_by_id.get(task_id)
+        if not task:
+            return
+        if task.get("completed"):
+            self.mark_selected_not_done()
+        else:
+            self.mark_selected_done()
 
     def _on_task_selected(self, _event=None):
         task_id = self._get_selected_task_id()
@@ -331,6 +382,7 @@ class TaskManagerGUI:
                 f"Task #{task['id']}",
                 f"Description: {task.get('task_description', '')}",
                 f"Priority: {task.get('priority', 'média')}",
+                f"Status: {'Done' if task.get('completed') else 'Pending'}",
                 f"Chat: {task.get('chat_name', '')}",
                 f"Sender: {task.get('sender', '')}",
                 f"Deadline: {task.get('deadline') or '-'}",

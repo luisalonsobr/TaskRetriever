@@ -129,6 +129,7 @@ With macOS integration enabled:
 - scanning/notifications run automatically on login (LaunchAgent)
 - clicking a task notification opens the GUI (focuses that task when available)
 - you can open the GUI anytime via `WhatsApp Task Manager.app` (Finder/Spotlight)
+- in the GUI, enable `Show done tasks` to review completed items and use `Mark Not Done` to reopen them
 
 ## 🔧 Technical Details
 
