@@ -20,19 +20,43 @@ class TaskDetector:
             )
             
             # Call Ollama API
+            payload = {
+                "model": self.model,
+                "prompt": prompt,
+                "stream": False,
+                # qwen3 often emits reasoning text unless thinking is disabled.
+                "think": False,
+                # Force structured output instead of free-form explanation.
+                "format": "json",
+                "options": {
+                    "temperature": 0.0,
+                    "num_predict": 220
+                }
+            }
+
             response = requests.post(
                 f"{self.ollama_url}/api/generate",
-                json={
+                json=payload,
+                timeout=30
+            )
+
+            # Backward compatibility for Ollama versions that may not support
+            # `think` or `format`.
+            if response.status_code == 400:
+                fallback_payload = {
                     "model": self.model,
                     "prompt": prompt,
                     "stream": False,
                     "options": {
-                        "temperature": 0.1,  # Low temperature for consistent parsing
-                        "num_predict": 200   # Limit response length
+                        "temperature": 0.1,
+                        "num_predict": 300
                     }
-                },
-                timeout=30
-            )
+                }
+                response = requests.post(
+                    f"{self.ollama_url}/api/generate",
+                    json=fallback_payload,
+                    timeout=30
+                )
             
             if response.status_code != 200:
                 print(f"Ollama API error: {response.status_code}")
@@ -51,7 +75,7 @@ class TaskDetector:
                         # Ensure required fields exist
                         if 'task_description' not in task_data:
                             return None
-                        return task_data
+                        return self._normalize_task_data(task_data)
                     else:
                         return None
                         
@@ -64,7 +88,7 @@ class TaskDetector:
                         json_part = llm_response[start:end]
                         task_data = json.loads(json_part)
                         if task_data.get('has_task'):
-                            return task_data
+                            return self._normalize_task_data(task_data)
                 except:
                     pass
                     
@@ -79,6 +103,27 @@ class TaskDetector:
             return None
             
         return None
+
+    def _normalize_task_data(self, task_data: Dict) -> Dict:
+        """Normalize model output into expected internal representation."""
+        normalized = dict(task_data)
+
+        # Some models return the string "null" instead of JSON null.
+        deadline = normalized.get("deadline")
+        if isinstance(deadline, str) and deadline.strip().lower() in {"null", "none", ""}:
+            normalized["deadline"] = None
+
+        priority = normalized.get("priority")
+        if isinstance(priority, str):
+            p = priority.strip().lower()
+            if p in {"alta", "high"}:
+                normalized["priority"] = "alta"
+            elif p in {"baixa", "low"}:
+                normalized["priority"] = "baixa"
+            elif p in {"media", "média", "medium"}:
+                normalized["priority"] = "média"
+
+        return normalized
     
     def _format_timestamp(self, timestamp: str) -> str:
         """Format timestamp for display"""
