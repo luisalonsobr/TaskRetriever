@@ -1,5 +1,8 @@
 # WhatsApp Task Manager
 
+Personal note: 
+Make no mistake, this is AI SLOP. I leave real coding for paying bills. However it does what I need, I hope it can be useful for those reading this. 
+
 An intelligent task extraction system that monitors your WhatsApp messages and automatically detects tasks, reminders, and action items using local AI processing.
 
 ## 🎯 Project Intent
