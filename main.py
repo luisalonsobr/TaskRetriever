@@ -285,6 +285,7 @@ class TaskManagerGUI:
         self.sort_column = "timestamp"
         self.sort_desc = True
         self._auto_refresh_job = None
+        self.sidebar_open = False
 
         self._setup_styles()
         self._build_ui()
@@ -419,6 +420,8 @@ class TaskManagerGUI:
         interval_spin.pack(side=tk.LEFT, padx=(4, 0))
 
         self.status_var = tk.StringVar(value="Ready")
+        self.info_btn = ttk.Button(controls, text="ⓘ", command=self._toggle_sidebar)
+        self.info_btn.pack(side=tk.RIGHT, padx=(8, 8))
         ttk.Label(controls, textvariable=self.status_var, style="Status.TLabel").pack(side=tk.RIGHT)
 
         filters_card = ttk.Frame(container, padding=12, style="Card.TFrame")
@@ -456,9 +459,15 @@ class TaskManagerGUI:
         ttk.Button(filters, text="Clear Filters", command=self._clear_filters).pack(side=tk.LEFT)
         search_entry.focus_set()
 
+        content_frame = ttk.Frame(container, style="Main.TFrame")
+        content_frame.pack(fill=tk.BOTH, expand=True)
+        content_frame.columnconfigure(0, weight=1)
+        content_frame.columnconfigure(1, weight=0)
+        content_frame.rowconfigure(0, weight=1)
+
         columns = ("id", "status", "priority", "task", "chat", "sender", "deadline", "timestamp")
-        table_card = ttk.Frame(container, padding=10, style="Card.TFrame")
-        table_card.pack(fill=tk.BOTH, expand=True)
+        table_card = ttk.Frame(content_frame, padding=10, style="Card.TFrame")
+        table_card.grid(row=0, column=0, sticky="nsew")
         self.tree = ttk.Treeview(table_card, columns=columns, show="headings", height=14)
         self._update_tree_headings()
 
@@ -482,10 +491,11 @@ class TaskManagerGUI:
         self.tree.bind("<<TreeviewSelect>>", self._on_task_selected)
         self.tree.bind("<Double-1>", self._on_double_click)
 
-        details_frame = ttk.Frame(container, padding=10, style="Card.TFrame")
-        details_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
-        ttk.Label(details_frame, text="Task Details", style="Section.TLabel").pack(anchor="w", pady=(0, 6))
-        self.details = tk.Text(details_frame, height=10, wrap=tk.WORD)
+        self.sidebar_frame = ttk.Frame(content_frame, padding=10, style="Card.TFrame", width=300)
+        self.sidebar_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
+        self.sidebar_frame.grid_propagate(False)
+        ttk.Label(self.sidebar_frame, text="Task Details", style="Section.TLabel").pack(anchor="w", pady=(0, 6))
+        self.details = tk.Text(self.sidebar_frame, wrap=tk.WORD)
         self.details.pack(fill=tk.BOTH, expand=True)
         self.details.configure(
             bg="#0f172a",
@@ -497,6 +507,8 @@ class TaskManagerGUI:
             insertbackground="#e2e8f0",
         )
         self.details.configure(state=tk.DISABLED)
+        if not self.sidebar_open:
+            self.sidebar_frame.grid_remove()
 
     def refresh_tasks(self):
         selected_before = self._get_selected_task_id()
@@ -644,6 +656,15 @@ class TaskManagerGUI:
         self.details.delete("1.0", tk.END)
         self.details.insert(tk.END, text)
         self.details.configure(state=tk.DISABLED)
+
+    def _toggle_sidebar(self):
+        self.sidebar_open = not self.sidebar_open
+        if self.sidebar_open:
+            self.sidebar_frame.grid()
+            self.info_btn.configure(text="✕")
+        else:
+            self.sidebar_frame.grid_remove()
+            self.info_btn.configure(text="ⓘ")
 
     def run(self):
         self.root.mainloop()
