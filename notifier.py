@@ -70,21 +70,13 @@ class MacNotifier:
         if len(value) > 500:
             value = value[:497] + "..."
         
-        # More comprehensive AppleScript escaping
         return (
             value
             .replace("\\", "\\\\")  # Backslashes first
             .replace('"', '\\"')    # Double quotes
-            .replace("'", "\\'")    # Single quotes
             .replace("\r", " ")     # Carriage returns
             .replace("\n", " ")     # Newlines
             .replace("\t", " ")     # Tabs
-            .replace("`", "\\`")    # Backticks (can be used for command substitution)
-            .replace("$", "\\$")    # Dollar signs (variable expansion)
-            .replace("{", "\\{")    # Braces (AppleScript syntax)
-            .replace("}", "\\}")    # Braces
-            .replace("(", "\\(")    # Parentheses (AppleScript syntax)
-            .replace(")", "\\)")    # Parentheses
         )
     
     def send_summary_notification(self, task_count: int):
