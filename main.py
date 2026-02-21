@@ -278,6 +278,11 @@ class TaskManagerGUI:
         self.show_done_var = tk.BooleanVar(value=False)
         self.auto_refresh_var = tk.BooleanVar(value=True)
         self.refresh_interval_var = tk.IntVar(value=30)
+        self.search_var = tk.StringVar(value="")
+        self.priority_filter_var = tk.StringVar(value="All")
+        self.status_filter_var = tk.StringVar(value="Pending")
+        self.sort_column = "timestamp"
+        self.sort_desc = True
         self._auto_refresh_job = None
 
         self._build_ui()
@@ -322,16 +327,40 @@ class TaskManagerGUI:
         self.status_var = tk.StringVar(value="Ready")
         ttk.Label(controls, textvariable=self.status_var).pack(side=tk.RIGHT)
 
+        filters = ttk.Frame(container)
+        filters.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(filters, text="Search:").pack(side=tk.LEFT)
+        search_entry = ttk.Entry(filters, textvariable=self.search_var, width=30)
+        search_entry.pack(side=tk.LEFT, padx=(4, 12))
+        search_entry.bind("<KeyRelease>", self._on_filter_change)
+
+        ttk.Label(filters, text="Priority:").pack(side=tk.LEFT)
+        priority_filter = ttk.Combobox(
+            filters,
+            textvariable=self.priority_filter_var,
+            values=("All", "alta", "média", "baixa"),
+            state="readonly",
+            width=10,
+        )
+        priority_filter.pack(side=tk.LEFT, padx=(4, 12))
+        priority_filter.bind("<<ComboboxSelected>>", self._on_filter_change)
+
+        ttk.Label(filters, text="Status:").pack(side=tk.LEFT)
+        status_filter = ttk.Combobox(
+            filters,
+            textvariable=self.status_filter_var,
+            values=("Pending", "Done", "All"),
+            state="readonly",
+            width=10,
+        )
+        status_filter.pack(side=tk.LEFT, padx=(4, 12))
+        status_filter.bind("<<ComboboxSelected>>", self._on_filter_change)
+
+        ttk.Button(filters, text="Clear Filters", command=self._clear_filters).pack(side=tk.LEFT)
+
         columns = ("id", "status", "priority", "task", "chat", "sender", "deadline", "timestamp")
         self.tree = ttk.Treeview(container, columns=columns, show="headings", height=14)
-        self.tree.heading("id", text="ID")
-        self.tree.heading("status", text="Status")
-        self.tree.heading("priority", text="Priority")
-        self.tree.heading("task", text="Task")
-        self.tree.heading("chat", text="Chat")
-        self.tree.heading("sender", text="Sender")
-        self.tree.heading("deadline", text="Deadline")
-        self.tree.heading("timestamp", text="Created")
+        self._update_tree_headings()
 
         self.tree.column("id", width=60, stretch=False, anchor=tk.CENTER)
         self.tree.column("status", width=90, stretch=False, anchor=tk.CENTER)
@@ -353,10 +382,14 @@ class TaskManagerGUI:
         self.details.configure(state=tk.DISABLED)
 
     def refresh_tasks(self):
+        selected_before = self._get_selected_task_id()
         for item_id in self.tree.get_children():
             self.tree.delete(item_id)
 
-        tasks = self.manager.db.get_tasks(include_completed=self.show_done_var.get())
+        include_completed = self.show_done_var.get() or self.status_filter_var.get() in ("Done", "All")
+        tasks = self.manager.db.get_tasks(include_completed=include_completed)
+        tasks = self._apply_filters(tasks)
+        tasks = self._apply_sort(tasks)
         self.tasks_by_id = {task["id"]: task for task in tasks}
 
         for task in tasks:
@@ -379,12 +412,12 @@ class TaskManagerGUI:
         total_count = len(tasks)
         done_count = sum(1 for task in tasks if task.get("completed"))
         pending_count = total_count - done_count
-        if self.show_done_var.get():
+        if self.show_done_var.get() or self.status_filter_var.get() in ("Done", "All"):
             self.status_var.set(
-                f"{pending_count} pending / {done_count} done ({total_count} total)"
+                f"Showing {total_count} task{'s' if total_count != 1 else ''}: {pending_count} pending / {done_count} done"
             )
         else:
-            self.status_var.set(f"{pending_count} pending task{'s' if pending_count != 1 else ''}")
+            self.status_var.set(f"Showing {pending_count} pending task{'s' if pending_count != 1 else ''}")
 
         if self.focus_task_id and self.focus_task_id in self.tasks_by_id:
             focus_id = str(self.focus_task_id)
@@ -393,6 +426,12 @@ class TaskManagerGUI:
             self.tree.see(focus_id)
             self._on_task_selected()
             self.focus_task_id = None
+        elif selected_before and selected_before in self.tasks_by_id:
+            selected_id = str(selected_before)
+            self.tree.selection_set(selected_id)
+            self.tree.focus(selected_id)
+            self.tree.see(selected_id)
+            self._on_task_selected()
         elif tasks:
             first_id = str(tasks[0]["id"])
             self.tree.selection_set(first_id)
@@ -497,6 +536,115 @@ class TaskManagerGUI:
     def _on_interval_change(self):
         if self.auto_refresh_var.get():
             self._schedule_auto_refresh()
+
+    def _on_filter_change(self, _event=None):
+        self.refresh_tasks()
+
+    def _clear_filters(self):
+        self.search_var.set("")
+        self.priority_filter_var.set("All")
+        self.status_filter_var.set("Pending")
+        self.refresh_tasks()
+
+    def _on_sort_column(self, column_name: str):
+        if self.sort_column == column_name:
+            self.sort_desc = not self.sort_desc
+        else:
+            self.sort_column = column_name
+            self.sort_desc = column_name in ("id", "timestamp")
+        self._update_tree_headings()
+        self.refresh_tasks()
+
+    def _update_tree_headings(self):
+        labels = {
+            "id": "ID",
+            "status": "Status",
+            "priority": "Priority",
+            "task": "Task",
+            "chat": "Chat",
+            "sender": "Sender",
+            "deadline": "Deadline",
+            "timestamp": "Created",
+        }
+        for column_name, label in labels.items():
+            direction = ""
+            if self.sort_column == column_name:
+                direction = " (desc)" if self.sort_desc else " (asc)"
+            self.tree.heading(
+                column_name,
+                text=f"{label}{direction}",
+                command=lambda c=column_name: self._on_sort_column(c),
+            )
+
+    def _apply_filters(self, tasks):
+        query = self.search_var.get().strip().lower()
+        priority_filter = self.priority_filter_var.get().strip().lower()
+        status_filter = self.status_filter_var.get().strip()
+
+        filtered_tasks = []
+        for task in tasks:
+            completed = bool(task.get("completed"))
+            if status_filter == "Pending" and completed:
+                continue
+            if status_filter == "Done" and not completed:
+                continue
+            if priority_filter and priority_filter != "all":
+                if str(task.get("priority", "")).strip().lower() != priority_filter:
+                    continue
+            if query:
+                haystack = " ".join(
+                    [
+                        str(task.get("id", "")),
+                        str(task.get("task_description", "")),
+                        str(task.get("chat_name", "")),
+                        str(task.get("sender", "")),
+                        str(task.get("message_content", "")),
+                        str(task.get("deadline", "")),
+                    ]
+                ).lower()
+                if query not in haystack:
+                    continue
+            filtered_tasks.append(task)
+        return filtered_tasks
+
+    def _apply_sort(self, tasks):
+        priority_order = {"baixa": 1, "média": 2, "media": 2, "alta": 3}
+        sort_column = self.sort_column
+
+        def to_epoch(value):
+            if value is None:
+                return 0
+            text = str(value).strip()
+            if not text:
+                return 0
+            if text.isdigit():
+                return int(text)
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y %H:%M", "%d/%m/%Y"):
+                try:
+                    return int(datetime.strptime(text, fmt).timestamp())
+                except ValueError:
+                    continue
+            return 0
+
+        def sort_key(task):
+            if sort_column == "id":
+                return int(task.get("id", 0))
+            if sort_column == "status":
+                return 1 if task.get("completed") else 0
+            if sort_column == "priority":
+                raw_priority = str(task.get("priority", "")).strip().lower()
+                return priority_order.get(raw_priority, 0)
+            if sort_column == "task":
+                return str(task.get("task_description", "")).lower()
+            if sort_column == "chat":
+                return str(task.get("chat_name", "")).lower()
+            if sort_column == "sender":
+                return str(task.get("sender", "")).lower()
+            if sort_column == "deadline":
+                return to_epoch(task.get("deadline"))
+            return to_epoch(task.get("timestamp"))
+
+        return sorted(tasks, key=sort_key, reverse=self.sort_desc)
 
     def _schedule_auto_refresh(self):
         self._cancel_auto_refresh()
