@@ -328,7 +328,7 @@ class EmailNotifier:
         )
 
         msg = MIMEMultipart()
-        msg['From'] = self.username or f"taskmanager@{self.host}"
+        msg['From'] = self.mail_from
         msg['To'] = self.mail_to
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain'))
