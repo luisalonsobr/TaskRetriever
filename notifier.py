@@ -324,7 +324,7 @@ class EmailNotifier:
             f"{deadline_line}\n\n"
             f"Chat        : {message.get('chat_name', '')}\n"
             f"Sender      : {message.get('sender', '')}\n\n"
-            f"Original message:\n{message.get('message_content', '')}\n"
+            f"Original message:\n{message.get('content', '')}\n"
         )
 
         msg = MIMEMultipart()
