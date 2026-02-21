@@ -274,6 +274,7 @@ class TaskManagerGUI:
         self.root = tk.Tk()
         self.root.title("WhatsApp Task Manager")
         self.root.geometry("1100x620")
+        self.root.minsize(980, 560)
         self.tasks_by_id = {}
         self.show_done_var = tk.BooleanVar(value=False)
         self.auto_refresh_var = tk.BooleanVar(value=True)
@@ -285,20 +286,113 @@ class TaskManagerGUI:
         self.sort_desc = True
         self._auto_refresh_job = None
 
+        self._setup_styles()
         self._build_ui()
         self.refresh_tasks()
         self._schedule_auto_refresh()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+    def _setup_styles(self):
+        style = ttk.Style(self.root)
+        if "clam" in style.theme_names():
+            style.theme_use("clam")
+
+        self.root.configure(bg="#0b1220")
+        font_base = ("Avenir Next", 12)
+        font_heading = ("Avenir Next Demi Bold", 13)
+        font_title = ("Avenir Next Demi Bold", 18)
+
+        style.configure(".", background="#0b1220", foreground="#dbeafe", font=font_base)
+        style.configure("Main.TFrame", background="#0b1220")
+        style.configure("Card.TFrame", background="#111a2e", relief="flat")
+        style.configure("Title.TLabel", background="#0b1220", foreground="#f8fafc", font=font_title)
+        style.configure("Hint.TLabel", background="#0b1220", foreground="#94a3b8", font=("Avenir Next", 11))
+        style.configure("Status.TLabel", background="#111a2e", foreground="#93c5fd", font=("Avenir Next Demi Bold", 11))
+        style.configure("Section.TLabel", background="#111a2e", foreground="#e2e8f0", font=font_heading)
+
+        style.configure(
+            "TButton",
+            padding=(10, 7),
+            relief="flat",
+            borderwidth=0,
+            background="#1f2a44",
+            foreground="#e2e8f0",
+        )
+        style.map("TButton", background=[("active", "#273552")])
+        style.configure("Primary.TButton", background="#3b82f6", foreground="#f8fafc")
+        style.map("Primary.TButton", background=[("active", "#2563eb")])
+
+        style.configure("TCheckbutton", background="#111a2e", foreground="#dbeafe")
+        style.map("TCheckbutton", background=[("active", "#111a2e")])
+
+        style.configure(
+            "TEntry",
+            fieldbackground="#0f172a",
+            foreground="#e2e8f0",
+            bordercolor="#334155",
+            lightcolor="#334155",
+            darkcolor="#334155",
+            padding=6,
+        )
+        style.configure(
+            "TCombobox",
+            fieldbackground="#0f172a",
+            background="#0f172a",
+            foreground="#e2e8f0",
+            padding=4,
+        )
+        style.configure(
+            "TSpinbox",
+            fieldbackground="#0f172a",
+            background="#0f172a",
+            foreground="#e2e8f0",
+            padding=4,
+        )
+
+        style.configure(
+            "Treeview",
+            background="#0f172a",
+            foreground="#dbeafe",
+            fieldbackground="#0f172a",
+            bordercolor="#1e293b",
+            rowheight=30,
+            font=("Avenir Next", 11),
+        )
+        style.configure(
+            "Treeview.Heading",
+            background="#17233a",
+            foreground="#93c5fd",
+            relief="flat",
+            font=("Avenir Next Demi Bold", 11),
+            padding=(8, 8),
+        )
+        style.map(
+            "Treeview",
+            background=[("selected", "#1d4ed8")],
+            foreground=[("selected", "#f8fafc")],
+        )
+        style.map("Treeview.Heading", background=[("active", "#1e2f4d")])
+
     def _build_ui(self):
-        container = ttk.Frame(self.root, padding=12)
+        container = ttk.Frame(self.root, padding=14, style="Main.TFrame")
         container.pack(fill=tk.BOTH, expand=True)
 
-        controls = ttk.Frame(container)
+        ttk.Label(container, text="Task Inbox", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(
+            container,
+            text="Capture, triage, and close WhatsApp tasks quickly.",
+            style="Hint.TLabel",
+        ).pack(anchor="w", pady=(2, 12))
+
+        controls_card = ttk.Frame(container, padding=12, style="Card.TFrame")
+        controls_card.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(controls_card, text="Actions", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
+
+        controls = ttk.Frame(controls_card, style="Card.TFrame")
         controls.pack(fill=tk.X, pady=(0, 8))
 
         ttk.Button(controls, text="Refresh", command=self.refresh_tasks).pack(side=tk.LEFT)
-        ttk.Button(controls, text="Scan Now", command=self.scan_now).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(controls, text="Scan Now", command=self.scan_now, style="Primary.TButton").pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(controls, text="Mark Done", command=self.mark_selected_done).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(controls, text="Mark Not Done", command=self.mark_selected_not_done).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Checkbutton(
@@ -325,10 +419,13 @@ class TaskManagerGUI:
         interval_spin.pack(side=tk.LEFT, padx=(4, 0))
 
         self.status_var = tk.StringVar(value="Ready")
-        ttk.Label(controls, textvariable=self.status_var).pack(side=tk.RIGHT)
+        ttk.Label(controls, textvariable=self.status_var, style="Status.TLabel").pack(side=tk.RIGHT)
 
-        filters = ttk.Frame(container)
-        filters.pack(fill=tk.X, pady=(0, 8))
+        filters_card = ttk.Frame(container, padding=12, style="Card.TFrame")
+        filters_card.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(filters_card, text="Filters", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
+        filters = ttk.Frame(filters_card, style="Card.TFrame")
+        filters.pack(fill=tk.X)
         ttk.Label(filters, text="Search:").pack(side=tk.LEFT)
         search_entry = ttk.Entry(filters, textvariable=self.search_var, width=30)
         search_entry.pack(side=tk.LEFT, padx=(4, 12))
@@ -357,9 +454,12 @@ class TaskManagerGUI:
         status_filter.bind("<<ComboboxSelected>>", self._on_filter_change)
 
         ttk.Button(filters, text="Clear Filters", command=self._clear_filters).pack(side=tk.LEFT)
+        search_entry.focus_set()
 
         columns = ("id", "status", "priority", "task", "chat", "sender", "deadline", "timestamp")
-        self.tree = ttk.Treeview(container, columns=columns, show="headings", height=14)
+        table_card = ttk.Frame(container, padding=10, style="Card.TFrame")
+        table_card.pack(fill=tk.BOTH, expand=True)
+        self.tree = ttk.Treeview(table_card, columns=columns, show="headings", height=14)
         self._update_tree_headings()
 
         self.tree.column("id", width=60, stretch=False, anchor=tk.CENTER)
@@ -371,14 +471,31 @@ class TaskManagerGUI:
         self.tree.column("deadline", width=140, stretch=False)
         self.tree.column("timestamp", width=150, stretch=False)
 
-        self.tree.pack(fill=tk.BOTH, expand=True)
+        scroll_y = ttk.Scrollbar(table_card, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll_y.set)
+        self.tree.tag_configure("row_even", background="#0f172a")
+        self.tree.tag_configure("row_odd", background="#111c30")
+        self.tree.tag_configure("done", foreground="#64748b")
+
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.bind("<<TreeviewSelect>>", self._on_task_selected)
         self.tree.bind("<Double-1>", self._on_double_click)
 
-        details_frame = ttk.LabelFrame(container, text="Task Details", padding=8)
-        details_frame.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+        details_frame = ttk.Frame(container, padding=10, style="Card.TFrame")
+        details_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+        ttk.Label(details_frame, text="Task Details", style="Section.TLabel").pack(anchor="w", pady=(0, 6))
         self.details = tk.Text(details_frame, height=10, wrap=tk.WORD)
         self.details.pack(fill=tk.BOTH, expand=True)
+        self.details.configure(
+            bg="#0f172a",
+            fg="#e2e8f0",
+            relief=tk.FLAT,
+            padx=10,
+            pady=10,
+            font=("Avenir Next", 11),
+            insertbackground="#e2e8f0",
+        )
         self.details.configure(state=tk.DISABLED)
 
     def refresh_tasks(self):
@@ -392,7 +509,10 @@ class TaskManagerGUI:
         tasks = self._apply_sort(tasks)
         self.tasks_by_id = {task["id"]: task for task in tasks}
 
-        for task in tasks:
+        for index, task in enumerate(tasks):
+            row_tags = ["row_even" if index % 2 == 0 else "row_odd"]
+            if task.get("completed"):
+                row_tags.append("done")
             self.tree.insert(
                 "",
                 tk.END,
@@ -407,6 +527,7 @@ class TaskManagerGUI:
                     task.get("deadline") or "-",
                     self.manager._format_timestamp(str(task.get("timestamp", ""))),
                 ),
+                tags=tuple(row_tags),
             )
 
         total_count = len(tasks)
