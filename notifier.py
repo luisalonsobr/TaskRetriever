@@ -4,6 +4,10 @@ import shutil
 import time
 import sys
 import shlex
+import smtplib
+import ssl
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from typing import Dict
 
 class MacNotifier:
@@ -228,3 +232,119 @@ class MacNotifier:
             if path and os.path.exists(path) and os.access(path, os.X_OK):
                 return path
         return ""
+
+
+class EmailNotifier:
+    def __init__(self):
+        from config import MAIL_HOST, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD, MAIL_ENCRYPTION, MAIL_TO, MAIL_FROM
+        self.host = MAIL_HOST
+        self.port = MAIL_PORT
+        self.username = MAIL_USERNAME
+        self.password = MAIL_PASSWORD
+        self.encryption = MAIL_ENCRYPTION.lower()
+        self.mail_to = MAIL_TO
+        self.mail_from = MAIL_FROM
+    def is_configured(self) -> bool:
+        return bool(self.host and self.mail_to)
+
+    def _connect(self) -> smtplib.SMTP:
+        """Open an authenticated SMTP connection and return the server object."""
+        if self.encryption == 'tls':
+            server = smtplib.SMTP_SSL(self.host, self.port)
+        else:
+            server = smtplib.SMTP(self.host, self.port)
+            if self.encryption == 'starttls':
+                server.ehlo()
+                server.starttls()
+                server.ehlo()
+        if self.username and self.password:
+            server.login(self.username, self.password)
+        return server
+
+    def _log_send_error(self, e: Exception, prefix: str = "⚠️ Email"):
+        """Log a categorised SMTP/network error."""
+        if isinstance(e, smtplib.SMTPAuthenticationError):
+            print(f"{prefix} auth failed for {self.username}: {e}")
+        elif isinstance(e, smtplib.SMTPConnectError):
+            print(f"{prefix} connection failed ({self.host}:{self.port}): {e}")
+        elif isinstance(e, smtplib.SMTPException):
+            print(f"{prefix} SMTP error: {e}")
+        elif isinstance(e, ssl.SSLError):
+            hint = ""
+            if self.encryption == 'tls' and self.port == 587:
+                hint = " — port 587 requires MAIL_ENCRYPTION=starttls"
+            elif self.encryption == 'starttls' and self.port == 465:
+                hint = " — port 465 requires MAIL_ENCRYPTION=tls"
+            print(f"{prefix} SSL error{hint}: {e}")
+        else:
+            print(f"{prefix} network error: {e}")
+
+    def test(self) -> bool:
+        """Send a test email to MAIL_TO and return True on success."""
+        if not self.is_configured():
+            print("⚠️ Email not configured (MAIL_HOST or MAIL_TO missing) — skipping email test")
+            return True  # Not a failure, just not set up
+
+        print(f"  Connecting to {self.host}:{self.port} (encryption={self.encryption})...")
+        try:
+            if self.username:
+                print(f"  Authenticating as {self.username}...")
+            server = self._connect()
+
+            msg = MIMEMultipart()
+            msg['From'] = self.mail_from
+            msg['To'] = self.mail_to
+            msg['Subject'] = "WhatsApp Task Manager - Test Email"
+            msg.attach(MIMEText(
+                "This is a test email from WhatsApp Task Manager.\n\n"
+                "If you received this, email notifications are working correctly.",
+                'plain'
+            ))
+
+            server.sendmail(msg['From'], self.mail_to, msg.as_string())
+            server.quit()
+            print(f"  Test email sent to {self.mail_to}")
+            return True
+        except Exception as e:
+            self._log_send_error(e, prefix="  ❌")
+            return False
+
+    def send_task_notification(self, task_data: Dict, message: Dict, task_id: int = None):
+        if not self.is_configured():
+            return
+
+        priority_label = {
+            'alta': 'High',
+            'média': 'Medium',
+            'baixa': 'Low',
+        }.get(task_data.get('priority', 'média'), 'Medium')
+
+        task_id_str = f"#{task_id}" if task_id else ""
+        subject = f"New Task {task_id_str}: {task_data['task_description'][:60]}"
+        deadline_line = f"Deadline: {task_data['deadline']}" if task_data.get('deadline') else "Deadline: -"
+
+        body = (
+            f"New task detected from WhatsApp.\n\n"
+            f"Task {task_id_str}\n"
+            f"{'=' * 40}\n"
+            f"Description : {task_data['task_description']}\n"
+            f"Priority    : {priority_label}\n"
+            f"{deadline_line}\n\n"
+            f"Chat        : {message.get('chat_name', '')}\n"
+            f"Sender      : {message.get('sender', '')}\n\n"
+            f"Original message:\n{message.get('message_content', '')}\n"
+        )
+
+        msg = MIMEMultipart()
+        msg['From'] = self.username or f"taskmanager@{self.host}"
+        msg['To'] = self.mail_to
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        try:
+            server = self._connect()
+            server.sendmail(msg['From'], self.mail_to, msg.as_string())
+            server.quit()
+            print(f"📧 Email notification sent to {self.mail_to}")
+        except Exception as e:
+            self._log_send_error(e)

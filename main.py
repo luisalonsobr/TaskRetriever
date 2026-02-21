@@ -12,7 +12,7 @@ messagebox = None
 
 from db_manager import DatabaseManager, DatabaseError
 from task_detector import TaskDetector, OllamaError
-from notifier import MacNotifier
+from notifier import MacNotifier, EmailNotifier
 from config import POLL_INTERVAL
 
 class WhatsAppTaskManager:
@@ -21,6 +21,7 @@ class WhatsAppTaskManager:
             self.db = DatabaseManager()
             self.detector = TaskDetector()
             self.notifier = MacNotifier()
+            self.email_notifier = EmailNotifier()
         except DatabaseError as e:
             print(f"❌ Database initialization failed: {e}")
             print("💡 Make sure your .env file is configured with valid database paths")
@@ -57,8 +58,9 @@ class WhatsAppTaskManager:
                         # Save task to database
                         task_id = self.db.save_task(message, task_data)
                         
-                        # Send notification
+                        # Send notifications
                         self.notifier.send_task_notification(task_data, message, task_id=task_id)
+                        self.email_notifier.send_task_notification(task_data, message, task_id=task_id)
                         
                         tasks_detected += 1
                         print(f"✅ Task #{task_id} detected: {task_data['task_description']}")
@@ -179,7 +181,15 @@ class WhatsAppTaskManager:
         else:
             print("❌ Notification test failed")
             return False
-            
+
+        # Test email
+        print("Testing email notification...")
+        if self.email_notifier.test():
+            print("✅ Email working")
+        else:
+            print("❌ Email test failed")
+            return False
+
         # Test database
         print("Testing database connections...")
         try:

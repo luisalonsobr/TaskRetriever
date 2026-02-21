@@ -45,6 +45,14 @@ MONITORED_GROUP_KEYWORDS = [s.strip() for s in _monitored_keywords.split(",") if
 # Polling interval in seconds (for daemon mode)
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "30"))
 
+# Email notification settings
+MAIL_HOST = os.getenv("MAIL_HOST", "")
+MAIL_PORT = int(os.getenv("MAIL_PORT", "587"))
+MAIL_USERNAME = os.getenv("MAIL_USERNAME", "")
+MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
+MAIL_ENCRYPTION = os.getenv("MAIL_ENCRYPTION", "starttls")  # tls, starttls, or none
+MAIL_TO = os.getenv("MAIL_TO", "")
+MAIL_FROM = os.getenv("MAIL_FROM", "")
 # Validate required database files exist
 def _validate_databases():
     """Validate that required database files exist and are accessible."""
