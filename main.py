@@ -76,7 +76,10 @@ class WhatsAppTaskManager:
             except Exception as e:
                 print(f"❌ Error processing message {message['id']}: {e}")
                 # Still mark as processed to avoid reprocessing
-                self.db.mark_message_processed(message['id'])
+                try:
+                    self.db.mark_message_processed(message['id'])
+                except DatabaseError as e:
+                    print(f"⚠️ Failed to mark message as processed: {e}")
                 
         if tasks_detected > 0:
             print(f"🎉 Detected {tasks_detected} new task{'s' if tasks_detected > 1 else ''}!")

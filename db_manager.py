@@ -23,37 +23,36 @@ class DatabaseManager:
             conn = sqlite3.connect(TASKS_DB)
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to connect to tasks database: {e}")
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                message_id TEXT UNIQUE,
-                chat_jid TEXT,
-                chat_name TEXT,
-                sender TEXT,
-                message_content TEXT,
-                task_description TEXT,
-                priority TEXT,
-                deadline TEXT,
-                timestamp TEXT,
-                completed BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS processed_messages (
-                message_id TEXT PRIMARY KEY,
-                processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
         try:
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    message_id TEXT UNIQUE,
+                    chat_jid TEXT,
+                    chat_name TEXT,
+                    sender TEXT,
+                    message_content TEXT,
+                    task_description TEXT,
+                    priority TEXT,
+                    deadline TEXT,
+                    timestamp TEXT,
+                    completed BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS processed_messages (
+                    message_id TEXT PRIMARY KEY,
+                    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             conn.execute('''
                 CREATE INDEX IF NOT EXISTS idx_processed_messages_processed_at
                 ON processed_messages(processed_at)
             ''')
             conn.commit()
         except sqlite3.Error as e:
-            conn.close()
             raise DatabaseError(f"Failed to initialize tasks database: {e}")
         finally:
             conn.close()
@@ -97,9 +96,13 @@ class DatabaseManager:
             
         try:
             conn = sqlite3.connect(WHATSAPP_MESSAGES_DB)
-            conn.execute("ATTACH DATABASE ? AS taskdb", (TASKS_DB,))
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to connect to message databases: {e}")
+        try:
+            conn.execute("ATTACH DATABASE ? AS taskdb", (TASKS_DB,))
+        except sqlite3.Error as e:
+            conn.close()
+            raise DatabaseError(f"Failed to attach tasks database: {e}")
         
         # Build query for monitored JIDs
         jid_placeholders = ','.join(['?' for _ in monitored_jids])
@@ -148,6 +151,7 @@ class DatabaseManager:
     
     def mark_message_processed(self, message_id: str):
         """Mark a message as processed"""
+        conn = None
         try:
             conn = sqlite3.connect(TASKS_DB)
             conn.execute("INSERT OR IGNORE INTO processed_messages (message_id) VALUES (?)", (message_id,))
@@ -155,10 +159,12 @@ class DatabaseManager:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to mark message as processed: {e}")
         finally:
-            conn.close()
+            if conn:
+                conn.close()
     
     def save_task(self, message: Dict, task_data: Dict) -> int:
         """Save a detected task to the database"""
+        conn = None
         try:
             conn = sqlite3.connect(TASKS_DB)
             cursor = conn.execute('''
@@ -183,7 +189,8 @@ class DatabaseManager:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to save task: {e}")
         finally:
-            conn.close()
+            if conn:
+                conn.close()
     
     def get_tasks(self, include_completed: bool = False) -> List[Dict]:
         """Get tasks, optionally including completed ones."""
