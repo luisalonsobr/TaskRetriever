@@ -102,6 +102,7 @@ Edit `config.py` to set:
 - Group keywords to watch
 - Database paths
 - Polling intervals
+- Daily log cleanup behavior (enabled by default in watch mode)
 
 ### Commands
 ```bash
@@ -193,6 +194,17 @@ The Portuguese task detection prompt can be modified in `config.py` to adjust:
 - Priority classification criteria
 - Deadline extraction patterns
 - Response format requirements
+
+### Log Housekeeping
+By default, `watch` mode clears daemon logs once per day (if files exist):
+- `/tmp/whatsapp-tasks.log`
+- `/tmp/whatsapp-tasks.err.log`
+
+You can control this with environment variables in `.env`:
+```bash
+LOG_CLEANUP_DAILY=1
+LOG_FILES=/tmp/whatsapp-tasks.log,/tmp/whatsapp-tasks.err.log
+```
 
 ## 📊 Workflow Example
 

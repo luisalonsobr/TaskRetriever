@@ -4,6 +4,7 @@ import sys
 import time
 import argparse
 from datetime import datetime
+from pathlib import Path
 from typing import List
 
 tk = None
@@ -13,10 +14,11 @@ messagebox = None
 from db_manager import DatabaseManager, DatabaseError
 from task_detector import TaskDetector, OllamaError
 from notifier import MacNotifier, EmailNotifier
-from config import POLL_INTERVAL
+from config import POLL_INTERVAL, LOG_CLEANUP_DAILY, LOG_FILES
 
 class WhatsAppTaskManager:
     def __init__(self):
+        self._last_log_cleanup_date = None
         try:
             self.db = DatabaseManager()
             self.detector = TaskDetector()
@@ -141,10 +143,12 @@ class WhatsAppTaskManager:
         """Run in daemon mode, continuously scanning for tasks"""
         print(f"👁️  Starting watch mode (checking every {POLL_INTERVAL} seconds)")
         print("Press Ctrl+C to stop")
+        self._cleanup_logs_if_due()
         
         try:
             while True:
                 try:
+                    self._cleanup_logs_if_due()
                     tasks_found = self.scan_for_tasks()
                     
                     if tasks_found > 0:
@@ -161,6 +165,36 @@ class WhatsAppTaskManager:
                     
         except KeyboardInterrupt:
             print("\n👋 Goodbye!")
+
+    def _cleanup_logs_if_due(self):
+        """Truncate configured log files at most once per day."""
+        if not LOG_CLEANUP_DAILY:
+            return
+
+        today = datetime.now().date()
+        if self._last_log_cleanup_date == today:
+            return
+
+        truncated_count = 0
+        error_count = 0
+        for log_file in LOG_FILES:
+            path = Path(log_file)
+            if not path.exists():
+                continue
+            try:
+                # Truncate in place so active file descriptors keep writing.
+                with path.open("w", encoding="utf-8"):
+                    pass
+                truncated_count += 1
+            except Exception as e:
+                error_count += 1
+                print(f"⚠️ Failed to truncate log file {path}: {e}")
+
+        self._last_log_cleanup_date = today
+        if truncated_count > 0:
+            print(f"🧹 Daily log cleanup: cleared {truncated_count} file(s)")
+        elif error_count == 0:
+            print("🧹 Daily log cleanup: no log files found to clear")
     
     def test_system(self):
         """Test all system components"""

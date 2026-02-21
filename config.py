@@ -45,6 +45,19 @@ MONITORED_GROUP_KEYWORDS = [s.strip() for s in _monitored_keywords.split(",") if
 # Polling interval in seconds (for daemon mode)
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "30"))
 
+# Log housekeeping (daemon/watch mode)
+LOG_CLEANUP_DAILY = os.getenv("LOG_CLEANUP_DAILY", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+_log_files = os.getenv(
+    "LOG_FILES",
+    "/tmp/whatsapp-tasks.log,/tmp/whatsapp-tasks.err.log",
+)
+LOG_FILES = [entry.strip() for entry in _log_files.split(",") if entry.strip()]
+
 # Email notification settings
 MAIL_HOST = os.getenv("MAIL_HOST", "")
 MAIL_PORT = int(os.getenv("MAIL_PORT", "587"))
