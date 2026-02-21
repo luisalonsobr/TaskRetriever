@@ -2,15 +2,27 @@ import sqlite3
 import json
 from datetime import datetime
 from typing import List, Dict, Optional
-from config import WHATSAPP_MESSAGES_DB, WHATSAPP_CHATS_DB, TASKS_DB, MONITORED_NUMBERS, MONITORED_GROUP_KEYWORDS
+from config import WHATSAPP_MESSAGES_DB, WHATSAPP_CHATS_DB, TASKS_DB, MONITORED_NUMBERS, MONITORED_GROUP_KEYWORDS, get_database_validation_errors
+
+class DatabaseError(Exception):
+    """Custom exception for database-related errors."""
+    pass
 
 class DatabaseManager:
     def __init__(self):
+        # Check for database validation errors first
+        db_errors = get_database_validation_errors()
+        if db_errors:
+            raise DatabaseError(f"Database validation failed: {'; '.join(db_errors)}")
+        
         self.init_tasks_db()
         
     def init_tasks_db(self):
         """Initialize the tasks database"""
-        conn = sqlite3.connect(TASKS_DB)
+        try:
+            conn = sqlite3.connect(TASKS_DB)
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to connect to tasks database: {e}")
         conn.execute('''
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,34 +46,48 @@ class DatabaseManager:
                 processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        conn.execute('''
-            CREATE INDEX IF NOT EXISTS idx_processed_messages_processed_at
-            ON processed_messages(processed_at)
-        ''')
-        conn.commit()
-        conn.close()
+        try:
+            conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_processed_messages_processed_at
+                ON processed_messages(processed_at)
+            ''')
+            conn.commit()
+        except sqlite3.Error as e:
+            conn.close()
+            raise DatabaseError(f"Failed to initialize tasks database: {e}")
+        finally:
+            conn.close()
         
     def get_monitored_chat_jids(self) -> List[str]:
         """Get JIDs of chats we should monitor"""
-        conn = sqlite3.connect(WHATSAPP_MESSAGES_DB)  # chats table is in messages.db
+        try:
+            conn = sqlite3.connect(WHATSAPP_MESSAGES_DB)  # chats table is in messages.db
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to connect to WhatsApp messages database: {e}")
         
-        # Get direct message JIDs
-        direct_jids = []
-        for number in MONITORED_NUMBERS:
-            cursor = conn.execute("SELECT jid FROM chats WHERE jid = ?", (number,))
-            result = cursor.fetchone()
-            if result:
-                direct_jids.append(result[0])
-        
-        # Get group JIDs containing keywords
-        group_jids = []
-        for keyword in MONITORED_GROUP_KEYWORDS:
-            cursor = conn.execute("SELECT jid FROM chats WHERE name LIKE ? AND jid LIKE '%@g.us'", (f"%{keyword}%",))
-            results = cursor.fetchall()
-            group_jids.extend([row[0] for row in results])
-        
-        conn.close()
-        return direct_jids + group_jids
+        try:
+            # Get direct message JIDs
+            direct_jids = []
+            for number in MONITORED_NUMBERS:
+                cursor = conn.execute("SELECT jid FROM chats WHERE jid = ?", (number,))
+                result = cursor.fetchone()
+                if result:
+                    direct_jids.append(result[0])
+            
+            # Get group JIDs containing keywords - using parameterized queries
+            group_jids = []
+            for keyword in MONITORED_GROUP_KEYWORDS:
+                # Use parameterized query to prevent SQL injection
+                cursor = conn.execute("SELECT jid FROM chats WHERE name LIKE ? AND jid LIKE '%@g.us'", (f"%{keyword}%",))
+                results = cursor.fetchall()
+                group_jids.extend([row[0] for row in results])
+            
+            return direct_jids + group_jids
+            
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to query monitored chats: {e}")
+        finally:
+            conn.close()
     
     def get_new_messages(self, last_check_timestamp: Optional[str] = None) -> List[Dict]:
         """Get new unprocessed messages from monitored chats."""
@@ -69,8 +95,11 @@ class DatabaseManager:
         if not monitored_jids:
             return []
             
-        conn = sqlite3.connect(WHATSAPP_MESSAGES_DB)
-        conn.execute("ATTACH DATABASE ? AS taskdb", (TASKS_DB,))
+        try:
+            conn = sqlite3.connect(WHATSAPP_MESSAGES_DB)
+            conn.execute("ATTACH DATABASE ? AS taskdb", (TASKS_DB,))
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to connect to message databases: {e}")
         
         # Build query for monitored JIDs
         jid_placeholders = ','.join(['?' for _ in monitored_jids])
@@ -93,9 +122,15 @@ class DatabaseManager:
 
         params = monitored_jids
         
-        cursor = conn.execute(query, params)
-        results = cursor.fetchall()
-        conn.close()
+        try:
+            cursor = conn.execute(query, params)
+            results = cursor.fetchall()
+            
+        except sqlite3.Error as e:
+            conn.close()
+            raise DatabaseError(f"Failed to query new messages: {e}")
+        else:
+            conn.close()
 
         messages = []
         for row in results:
@@ -113,55 +148,70 @@ class DatabaseManager:
     
     def mark_message_processed(self, message_id: str):
         """Mark a message as processed"""
-        conn = sqlite3.connect(TASKS_DB)
-        conn.execute("INSERT OR IGNORE INTO processed_messages (message_id) VALUES (?)", (message_id,))
-        conn.commit()
-        conn.close()
+        try:
+            conn = sqlite3.connect(TASKS_DB)
+            conn.execute("INSERT OR IGNORE INTO processed_messages (message_id) VALUES (?)", (message_id,))
+            conn.commit()
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to mark message as processed: {e}")
+        finally:
+            conn.close()
     
     def save_task(self, message: Dict, task_data: Dict) -> int:
         """Save a detected task to the database"""
-        conn = sqlite3.connect(TASKS_DB)
-        cursor = conn.execute('''
-            INSERT INTO tasks (
-                message_id, chat_jid, chat_name, sender, message_content,
-                task_description, priority, deadline, timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            message['id'],
-            message['chat_jid'],
-            message['chat_name'],
-            message['sender'],
-            message['content'],
-            task_data['task_description'],
-            task_data.get('priority', 'média'),
-            task_data.get('deadline'),
-            message['timestamp']
-        ))
-        task_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return task_id
+        try:
+            conn = sqlite3.connect(TASKS_DB)
+            cursor = conn.execute('''
+                INSERT INTO tasks (
+                    message_id, chat_jid, chat_name, sender, message_content,
+                    task_description, priority, deadline, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                message['id'],
+                message['chat_jid'],
+                message['chat_name'],
+                message['sender'],
+                message['content'],
+                task_data['task_description'],
+                task_data.get('priority', 'média'),
+                task_data.get('deadline'),
+                message['timestamp']
+            ))
+            task_id = cursor.lastrowid
+            conn.commit()
+            return task_id
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to save task: {e}")
+        finally:
+            conn.close()
     
     def get_tasks(self, include_completed: bool = False) -> List[Dict]:
         """Get tasks, optionally including completed ones."""
-        conn = sqlite3.connect(TASKS_DB)
-        if include_completed:
-            cursor = conn.execute('''
-            SELECT id, chat_name, sender, task_description, priority, 
-                   deadline, timestamp, message_content, completed
-            FROM tasks
-            ORDER BY created_at DESC
-        ''')
-        else:
-            cursor = conn.execute('''
-            SELECT id, chat_name, sender, task_description, priority, 
-                   deadline, timestamp, message_content, completed
-            FROM tasks 
-            WHERE completed = FALSE 
-            ORDER BY created_at DESC
-        ''')
-        results = cursor.fetchall()
-        conn.close()
+        try:
+            conn = sqlite3.connect(TASKS_DB)
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to connect to tasks database: {e}")
+        try:
+            if include_completed:
+                cursor = conn.execute('''
+                SELECT id, chat_name, sender, task_description, priority, 
+                       deadline, timestamp, message_content, completed
+                FROM tasks
+                ORDER BY created_at DESC
+            ''')
+            else:
+                cursor = conn.execute('''
+                SELECT id, chat_name, sender, task_description, priority, 
+                       deadline, timestamp, message_content, completed
+                FROM tasks 
+                WHERE completed = FALSE 
+                ORDER BY created_at DESC
+            ''')
+            results = cursor.fetchall()
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to query tasks: {e}")
+        finally:
+            conn.close()
         
         tasks = []
         for row in results:

@@ -10,23 +10,32 @@ tk = None
 ttk = None
 messagebox = None
 
-from db_manager import DatabaseManager
-from task_detector import TaskDetector
+from db_manager import DatabaseManager, DatabaseError
+from task_detector import TaskDetector, OllamaError
 from notifier import MacNotifier
 from config import POLL_INTERVAL
 
 class WhatsAppTaskManager:
     def __init__(self):
-        self.db = DatabaseManager()
-        self.detector = TaskDetector()
-        self.notifier = MacNotifier()
+        try:
+            self.db = DatabaseManager()
+            self.detector = TaskDetector()
+            self.notifier = MacNotifier()
+        except DatabaseError as e:
+            print(f"❌ Database initialization failed: {e}")
+            print("💡 Make sure your .env file is configured with valid database paths")
+            raise
         
     def scan_for_tasks(self) -> int:
         """Scan for new tasks and return count of tasks found"""
         print("🔍 Scanning for new messages...")
         
-        # Get new unprocessed messages
-        messages = self.db.get_new_messages()
+        try:
+            # Get new unprocessed messages
+            messages = self.db.get_new_messages()
+        except DatabaseError as e:
+            print(f"❌ Failed to get messages: {e}")
+            return 0
         
         if not messages:
             print("📝 No new messages found")
@@ -44,17 +53,25 @@ class WhatsAppTaskManager:
                 task_data = self.detector.detect_task(message)
                 
                 if task_data:
-                    # Save task to database
-                    task_id = self.db.save_task(message, task_data)
-                    
-                    # Send notification
-                    self.notifier.send_task_notification(task_data, message, task_id=task_id)
-                    
-                    tasks_detected += 1
-                    print(f"✅ Task #{task_id} detected: {task_data['task_description']}")
+                    try:
+                        # Save task to database
+                        task_id = self.db.save_task(message, task_data)
+                        
+                        # Send notification
+                        self.notifier.send_task_notification(task_data, message, task_id=task_id)
+                        
+                        tasks_detected += 1
+                        print(f"✅ Task #{task_id} detected: {task_data['task_description']}")
+                    except DatabaseError as e:
+                        print(f"❌ Failed to save task: {e}")
+                        # Continue processing other messages
                 
                 # Mark message as processed regardless of task detection
-                self.db.mark_message_processed(message['id'])
+                try:
+                    self.db.mark_message_processed(message['id'])
+                except DatabaseError as e:
+                    print(f"⚠️ Failed to mark message as processed: {e}")
+                    # Continue processing, but this message might be reprocessed later
                 
             except Exception as e:
                 print(f"❌ Error processing message {message['id']}: {e}")

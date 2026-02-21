@@ -61,12 +61,26 @@ class MacNotifier:
         """Escape untrusted text before embedding in AppleScript string literals."""
         if not isinstance(value, str):
             value = str(value)
+        
+        # Limit length to prevent overly long notifications
+        if len(value) > 500:
+            value = value[:497] + "..."
+        
+        # More comprehensive AppleScript escaping
         return (
             value
-            .replace("\\", "\\\\")
-            .replace('"', '\\"')
-            .replace("\r", " ")
-            .replace("\n", " ")
+            .replace("\\", "\\\\")  # Backslashes first
+            .replace('"', '\\"')    # Double quotes
+            .replace("'", "\\'")    # Single quotes
+            .replace("\r", " ")     # Carriage returns
+            .replace("\n", " ")     # Newlines
+            .replace("\t", " ")     # Tabs
+            .replace("`", "\\`")    # Backticks (can be used for command substitution)
+            .replace("$", "\\$")    # Dollar signs (variable expansion)
+            .replace("{", "\\{")    # Braces (AppleScript syntax)
+            .replace("}", "\\}")    # Braces
+            .replace("(", "\\(")    # Parentheses (AppleScript syntax)
+            .replace(")", "\\)")    # Parentheses
         )
     
     def send_summary_notification(self, task_count: int):

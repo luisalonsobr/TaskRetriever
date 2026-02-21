@@ -45,6 +45,36 @@ MONITORED_GROUP_KEYWORDS = [s.strip() for s in _monitored_keywords.split(",") if
 # Polling interval in seconds (for daemon mode)
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "30"))
 
+# Validate required database files exist
+def _validate_databases():
+    """Validate that required database files exist and are accessible."""
+    missing_dbs = []
+    
+    if not WHATSAPP_MESSAGES_DB:
+        missing_dbs.append("WHATSAPP_MESSAGES_DB environment variable not set")
+    elif not os.path.exists(WHATSAPP_MESSAGES_DB):
+        missing_dbs.append(f"WhatsApp messages database not found: {WHATSAPP_MESSAGES_DB}")
+    elif not os.access(WHATSAPP_MESSAGES_DB, os.R_OK):
+        missing_dbs.append(f"WhatsApp messages database not readable: {WHATSAPP_MESSAGES_DB}")
+        
+    if not WHATSAPP_CHATS_DB:
+        missing_dbs.append("WHATSAPP_CHATS_DB environment variable not set")
+    elif not os.path.exists(WHATSAPP_CHATS_DB):
+        missing_dbs.append(f"WhatsApp chats database not found: {WHATSAPP_CHATS_DB}")
+    elif not os.access(WHATSAPP_CHATS_DB, os.R_OK):
+        missing_dbs.append(f"WhatsApp chats database not readable: {WHATSAPP_CHATS_DB}")
+    
+    return missing_dbs
+
+# Validate databases when module is imported (unless running tests)
+_db_validation_errors = []
+if not os.getenv("SKIP_DB_VALIDATION"):  # Allow tests to skip validation
+    _db_validation_errors = _validate_databases()
+
+def get_database_validation_errors():
+    """Get any database validation errors found during import."""
+    return _db_validation_errors.copy()
+
 # Portuguese task detection prompt
 TASK_PROMPT = os.getenv(
     "TASK_PROMPT",

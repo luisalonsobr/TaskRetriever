@@ -4,13 +4,34 @@ from datetime import datetime
 from typing import Dict, Optional
 from config import OLLAMA_MODEL, OLLAMA_URL, TASK_PROMPT
 
+class OllamaError(Exception):
+    """Custom exception for Ollama-related errors."""
+    pass
+
 class TaskDetector:
     def __init__(self):
         self.ollama_url = OLLAMA_URL
         self.model = OLLAMA_MODEL
         
+        # Test connection on initialization
+        if not self._test_ollama_availability():
+            print("⚠️ Warning: Ollama is not available. Task detection will be disabled.")
+            self._ollama_available = False
+        else:
+            self._ollama_available = True
+        
     def detect_task(self, message: Dict) -> Optional[Dict]:
         """Analyze a message for tasks using Ollama"""
+        # Check if Ollama is available
+        if not self._ollama_available:
+            # Try to reconnect once per detection attempt
+            if not self._test_ollama_availability():
+                print("⚠️ Ollama still not available, skipping task detection")
+                return None
+            else:
+                print("✅ Ollama reconnected successfully")
+                self._ollama_available = True
+        
         try:
             # Format the prompt with message data
             prompt = TASK_PROMPT.format(
@@ -97,6 +118,8 @@ class TaskDetector:
                 
         except requests.RequestException as e:
             print(f"Error calling Ollama: {e}")
+            # Mark as unavailable for future checks
+            self._ollama_available = False
             return None
         except Exception as e:
             print(f"Unexpected error in task detection: {e}")
@@ -135,6 +158,29 @@ class TaskDetector:
             return timestamp
         except:
             return timestamp
+    
+    def _test_ollama_availability(self) -> bool:
+        """Test if Ollama is running and our model is available (with shorter timeout)"""
+        try:
+            # Quick health check with short timeout
+            response = requests.get(f"{self.ollama_url}/api/tags", timeout=3)
+            if response.status_code != 200:
+                return False
+                
+            # Check if our model is available
+            models = response.json().get('models', [])
+            model_names = [model['name'] for model in models]
+            
+            available = any(self.model in name for name in model_names)
+            if not available:
+                print(f"⚠️ Model '{self.model}' not found in Ollama. Available models: {model_names}")
+            
+            return available
+            
+        except requests.RequestException:
+            return False
+        except Exception:
+            return False
     
     def test_connection(self) -> bool:
         """Test if Ollama is running and model is available"""
