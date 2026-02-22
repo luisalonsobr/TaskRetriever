@@ -2,6 +2,7 @@
 
 import sys
 import time
+import json
 import argparse
 from datetime import datetime
 from pathlib import Path
@@ -285,7 +286,10 @@ class TaskManagerGUI:
         self.sort_column = "timestamp"
         self.sort_desc = True
         self._auto_refresh_job = None
-        self.sidebar_open = False
+        self._gui_state_path = Path.home() / ".task_manager_gui.json"
+        _gui_state = self._load_gui_state()
+        self.sidebar_open = _gui_state.get("sidebar_open", False)
+        self.sidebar_width = _gui_state.get("sidebar_width", 210)
 
         self._setup_styles()
         self._build_ui()
@@ -373,6 +377,8 @@ class TaskManagerGUI:
             foreground=[("selected", "#f8fafc")],
         )
         style.map("Treeview.Heading", background=[("active", "#1e2f4d")])
+        style.configure("TPanedwindow", background="#0b1220")
+        style.configure("Sash", sashthickness=5, sashrelief="flat")
 
     def _build_ui(self):
         container = ttk.Frame(self.root, padding=14, style="Main.TFrame")
@@ -459,15 +465,12 @@ class TaskManagerGUI:
         ttk.Button(filters, text="Clear Filters", command=self._clear_filters).pack(side=tk.LEFT)
         search_entry.focus_set()
 
-        content_frame = ttk.Frame(container, style="Main.TFrame")
-        content_frame.pack(fill=tk.BOTH, expand=True)
-        content_frame.columnconfigure(0, weight=1)
-        content_frame.columnconfigure(1, weight=0)
-        content_frame.rowconfigure(0, weight=1)
+        self.content_paned = ttk.PanedWindow(container, orient=tk.HORIZONTAL)
+        self.content_paned.pack(fill=tk.BOTH, expand=True)
 
         columns = ("id", "status", "priority", "task", "chat", "sender", "deadline", "timestamp")
-        table_card = ttk.Frame(content_frame, padding=10, style="Card.TFrame")
-        table_card.grid(row=0, column=0, sticky="nsew")
+        table_card = ttk.Frame(self.content_paned, padding=10, style="Card.TFrame")
+        self.content_paned.add(table_card, weight=1)
         self.tree = ttk.Treeview(table_card, columns=columns, show="headings", height=14)
         self._update_tree_headings()
 
@@ -491,9 +494,7 @@ class TaskManagerGUI:
         self.tree.bind("<<TreeviewSelect>>", self._on_task_selected)
         self.tree.bind("<Double-1>", self._on_double_click)
 
-        self.sidebar_frame = ttk.Frame(content_frame, padding=10, style="Card.TFrame", width=300)
-        self.sidebar_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
-        self.sidebar_frame.grid_propagate(False)
+        self.sidebar_frame = ttk.Frame(self.content_paned, padding=10, style="Card.TFrame")
         ttk.Label(self.sidebar_frame, text="Task Details", style="Section.TLabel").pack(anchor="w", pady=(0, 6))
         self.details = tk.Text(self.sidebar_frame, wrap=tk.WORD)
         self.details.pack(fill=tk.BOTH, expand=True)
@@ -507,8 +508,9 @@ class TaskManagerGUI:
             insertbackground="#e2e8f0",
         )
         self.details.configure(state=tk.DISABLED)
-        if not self.sidebar_open:
-            self.sidebar_frame.grid_remove()
+        if self.sidebar_open:
+            self.content_paned.add(self.sidebar_frame, weight=0)
+            self.root.after(100, self._apply_sidebar_width)
 
     def refresh_tasks(self):
         selected_before = self._get_selected_task_id()
@@ -660,11 +662,41 @@ class TaskManagerGUI:
     def _toggle_sidebar(self):
         self.sidebar_open = not self.sidebar_open
         if self.sidebar_open:
-            self.sidebar_frame.grid()
+            self.content_paned.add(self.sidebar_frame, weight=0)
+            self.root.after(50, self._apply_sidebar_width)
             self.info_btn.configure(text="✕")
         else:
-            self.sidebar_frame.grid_remove()
+            total = self.content_paned.winfo_width()
+            sash = self.content_paned.sashpos(0)
+            if total > 1:
+                self.sidebar_width = total - sash
+            self.content_paned.forget(self.sidebar_frame)
             self.info_btn.configure(text="ⓘ")
+
+    def _apply_sidebar_width(self):
+        total = self.content_paned.winfo_width()
+        if total > 1:
+            self.content_paned.sashpos(0, total - self.sidebar_width)
+
+    def _load_gui_state(self):
+        try:
+            with open(self._gui_state_path) as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _save_gui_state(self):
+        state = {"sidebar_open": self.sidebar_open, "sidebar_width": self.sidebar_width}
+        if self.sidebar_open:
+            total = self.content_paned.winfo_width()
+            sash = self.content_paned.sashpos(0)
+            if total > 1:
+                state["sidebar_width"] = total - sash
+        try:
+            with open(self._gui_state_path, "w") as f:
+                json.dump(state, f)
+        except Exception:
+            pass
 
     def run(self):
         self.root.mainloop()
@@ -811,6 +843,7 @@ class TaskManagerGUI:
 
     def _on_close(self):
         self._cancel_auto_refresh()
+        self._save_gui_state()
         self.root.destroy()
 
 def main():
