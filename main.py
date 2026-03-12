@@ -63,7 +63,7 @@ class WhatsAppTaskManager:
                         
                         # Send notifications
                         self.notifier.send_task_notification(task_data, message, task_id=task_id)
-                        self.email_notifier.send_task_notification(task_data, message, task_id=task_id)
+                        # self.email_notifier.send_task_notification(task_data, message, task_id=task_id)
                         
                         tasks_detected += 1
                         print(f"✅ Task #{task_id} detected: {task_data['task_description']}")
@@ -217,13 +217,13 @@ class WhatsAppTaskManager:
             print("❌ Notification test failed")
             return False
 
-        # Test email
-        print("Testing email notification...")
-        if self.email_notifier.test():
-            print("✅ Email working")
-        else:
-            print("❌ Email test failed")
-            return False
+        # Test email (disabled)
+        # print("Testing email notification...")
+        # if self.email_notifier.test():
+        #     print("✅ Email working")
+        # else:
+        #     print("❌ Email test failed")
+        #     return False
 
         # Test database
         print("Testing database connections...")
@@ -281,8 +281,10 @@ class TaskManagerGUI:
         self.auto_refresh_var = tk.BooleanVar(value=True)
         self.refresh_interval_var = tk.IntVar(value=30)
         self.search_var = tk.StringVar(value="")
-        self.priority_filter_var = tk.StringVar(value="All")
-        self.status_filter_var = tk.StringVar(value="Pending")
+        self.priority_active = {}
+        self._priority_btns = {}
+        self.status_active = {}
+        self._status_btns = {}
         self.sort_column = "timestamp"
         self.sort_desc = True
         self._auto_refresh_job = None
@@ -441,26 +443,58 @@ class TaskManagerGUI:
         search_entry.bind("<KeyRelease>", self._on_filter_change)
 
         ttk.Label(filters, text="Priority:").pack(side=tk.LEFT)
-        priority_filter = ttk.Combobox(
-            filters,
-            textvariable=self.priority_filter_var,
-            values=("All", "alta", "média", "baixa"),
-            state="readonly",
-            width=10,
-        )
-        priority_filter.pack(side=tk.LEFT, padx=(4, 12))
-        priority_filter.bind("<<ComboboxSelected>>", self._on_filter_change)
+        _priority_active_colors = {
+            "alta":  ("#4a0d0d", "#fca5a5"),
+            "média": ("#432b00", "#fcd34d"),
+            "baixa": ("#0c3320", "#86efac"),
+        }
+        for _tag in ("alta", "média", "baixa"):
+            self.priority_active[_tag] = tk.BooleanVar(value=False)
+            _btn = tk.Button(
+                filters,
+                text=_tag,
+                bg="#141e33",
+                fg="#3d5278",
+                activebackground="#1a2745",
+                activeforeground="#e2e8f0",
+                relief="flat",
+                bd=0,
+                padx=10,
+                pady=5,
+                cursor="hand2",
+                font=("Avenir Next", 11),
+                command=lambda t=_tag: self._toggle_priority(t),
+            )
+            _btn.pack(side=tk.LEFT, padx=(4, 0))
+            self._priority_btns[_tag] = (_btn, _priority_active_colors[_tag])
 
-        ttk.Label(filters, text="Status:").pack(side=tk.LEFT)
-        status_filter = ttk.Combobox(
-            filters,
-            textvariable=self.status_filter_var,
-            values=("Pending", "Done", "All"),
-            state="readonly",
-            width=10,
-        )
-        status_filter.pack(side=tk.LEFT, padx=(4, 12))
-        status_filter.bind("<<ComboboxSelected>>", self._on_filter_change)
+        ttk.Label(filters, text="Status:").pack(side=tk.LEFT, padx=(12, 0))
+        _status_active_colors = {
+            "Pending": ("#0d2147", "#93c5fd"),
+            "Done":    ("#0b2e1e", "#6ee7b7"),
+        }
+        for _tag in ("Pending", "Done"):
+            self.status_active[_tag] = tk.BooleanVar(value=(_tag == "Pending"))
+            _sbtn = tk.Button(
+                filters,
+                text=_tag,
+                bg="#141e33",
+                fg="#3d5278",
+                activebackground="#1a2745",
+                activeforeground="#e2e8f0",
+                relief="flat",
+                bd=0,
+                padx=10,
+                pady=5,
+                cursor="hand2",
+                font=("Avenir Next", 11),
+                command=lambda t=_tag: self._toggle_status(t),
+            )
+            _sbtn.pack(side=tk.LEFT, padx=(4, 0))
+            self._status_btns[_tag] = (_sbtn, _status_active_colors[_tag])
+        # apply initial active appearance for "Pending"
+        _init_btn, (_init_bg, _init_fg) = self._status_btns["Pending"]
+        _init_btn.configure(bg=_init_bg, fg=_init_fg)
 
         ttk.Button(filters, text="Clear Filters", command=self._clear_filters).pack(side=tk.LEFT)
         search_entry.focus_set()
@@ -517,7 +551,9 @@ class TaskManagerGUI:
         for item_id in self.tree.get_children():
             self.tree.delete(item_id)
 
-        include_completed = self.show_done_var.get() or self.status_filter_var.get() in ("Done", "All")
+        _pending_on = self.status_active["Pending"].get()
+        _done_on = self.status_active["Done"].get()
+        include_completed = self.show_done_var.get() or _done_on or (not _pending_on and not _done_on)
         tasks = self.manager.db.get_tasks(include_completed=include_completed)
         tasks = self._apply_filters(tasks)
         tasks = self._apply_sort(tasks)
@@ -547,7 +583,7 @@ class TaskManagerGUI:
         total_count = len(tasks)
         done_count = sum(1 for task in tasks if task.get("completed"))
         pending_count = total_count - done_count
-        if self.show_done_var.get() or self.status_filter_var.get() in ("Done", "All"):
+        if include_completed:
             self.status_var.set(
                 f"Showing {total_count} task{'s' if total_count != 1 else ''}: {pending_count} pending / {done_count} done"
             )
@@ -716,8 +752,37 @@ class TaskManagerGUI:
 
     def _clear_filters(self):
         self.search_var.set("")
-        self.priority_filter_var.set("All")
-        self.status_filter_var.set("Pending")
+        for tag, var in self.priority_active.items():
+            var.set(False)
+            btn, _ = self._priority_btns[tag]
+            btn.configure(bg="#141e33", fg="#3d5278")
+        for tag, var in self.status_active.items():
+            var.set(tag == "Pending")
+            btn, (active_bg, active_fg) = self._status_btns[tag]
+            if tag == "Pending":
+                btn.configure(bg=active_bg, fg=active_fg)
+            else:
+                btn.configure(bg="#141e33", fg="#3d5278")
+        self.refresh_tasks()
+
+    def _toggle_priority(self, tag: str):
+        var = self.priority_active[tag]
+        var.set(not var.get())
+        btn, (active_bg, active_fg) = self._priority_btns[tag]
+        if var.get():
+            btn.configure(bg=active_bg, fg=active_fg)
+        else:
+            btn.configure(bg="#141e33", fg="#3d5278")
+        self.refresh_tasks()
+
+    def _toggle_status(self, tag: str):
+        var = self.status_active[tag]
+        var.set(not var.get())
+        btn, (active_bg, active_fg) = self._status_btns[tag]
+        if var.get():
+            btn.configure(bg=active_bg, fg=active_fg)
+        else:
+            btn.configure(bg="#141e33", fg="#3d5278")
         self.refresh_tasks()
 
     def _on_sort_column(self, column_name: str):
@@ -752,18 +817,19 @@ class TaskManagerGUI:
 
     def _apply_filters(self, tasks):
         query = self.search_var.get().strip().lower()
-        priority_filter = self.priority_filter_var.get().strip().lower()
-        status_filter = self.status_filter_var.get().strip()
+        active_priorities = {tag for tag, var in self.priority_active.items() if var.get()}
+        pending_on = self.status_active["Pending"].get()
+        done_on = self.status_active["Done"].get()
 
         filtered_tasks = []
         for task in tasks:
             completed = bool(task.get("completed"))
-            if status_filter == "Pending" and completed:
+            if pending_on and not done_on and completed:
                 continue
-            if status_filter == "Done" and not completed:
+            if done_on and not pending_on and not completed:
                 continue
-            if priority_filter and priority_filter != "all":
-                if str(task.get("priority", "")).strip().lower() != priority_filter:
+            if active_priorities:
+                if str(task.get("priority", "")).strip().lower() not in active_priorities:
                     continue
             if query:
                 haystack = " ".join(
