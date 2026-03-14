@@ -443,54 +443,48 @@ class TaskManagerGUI:
         search_entry.bind("<KeyRelease>", self._on_filter_change)
 
         ttk.Label(filters, text="Priority:").pack(side=tk.LEFT)
+        self._badge_inactive_bg = "#1a2438"
+        self._badge_inactive_fg = "#e8efff"
         _priority_active_colors = {
-            "alta":  ("#4a0d0d", "#fca5a5"),
-            "média": ("#432b00", "#fcd34d"),
-            "baixa": ("#0c3320", "#86efac"),
+            "alta":  ("#4f1626", "#ffeaf0"),
+            "média": ("#4c310f", "#fff6df"),
+            "baixa": ("#184632", "#e8fff4"),
         }
         for _tag in ("alta", "média", "baixa"):
             self.priority_active[_tag] = tk.BooleanVar(value=False)
-            _btn = tk.Button(
+            _btn = tk.Label(
                 filters,
                 text=_tag,
-                bg="#141e33",
-                fg="#3d5278",
-                activebackground="#1a2745",
-                activeforeground="#e2e8f0",
-                relief="flat",
-                bd=0,
+                bg=self._badge_inactive_bg,
+                fg=self._badge_inactive_fg,
                 padx=10,
                 pady=5,
                 cursor="hand2",
                 font=("Avenir Next", 11),
-                command=lambda t=_tag: self._toggle_priority(t),
             )
             _btn.pack(side=tk.LEFT, padx=(4, 0))
+            _btn.bind("<Button-1>", lambda _event, t=_tag: self._toggle_priority(t))
             self._priority_btns[_tag] = (_btn, _priority_active_colors[_tag])
 
         ttk.Label(filters, text="Status:").pack(side=tk.LEFT, padx=(12, 0))
         _status_active_colors = {
-            "Pending": ("#0d2147", "#93c5fd"),
-            "Done":    ("#0b2e1e", "#6ee7b7"),
+            "Pending": ("#16375e", "#e6f0ff"),
+            "Done":    ("#16523a", "#e8fff2"),
         }
         for _tag in ("Pending", "Done"):
             self.status_active[_tag] = tk.BooleanVar(value=(_tag == "Pending"))
-            _sbtn = tk.Button(
+            _sbtn = tk.Label(
                 filters,
                 text=_tag,
-                bg="#141e33",
-                fg="#3d5278",
-                activebackground="#1a2745",
-                activeforeground="#e2e8f0",
-                relief="flat",
-                bd=0,
+                bg=self._badge_inactive_bg,
+                fg=self._badge_inactive_fg,
                 padx=10,
                 pady=5,
                 cursor="hand2",
                 font=("Avenir Next", 11),
-                command=lambda t=_tag: self._toggle_status(t),
             )
             _sbtn.pack(side=tk.LEFT, padx=(4, 0))
+            _sbtn.bind("<Button-1>", lambda _event, t=_tag: self._toggle_status(t))
             self._status_btns[_tag] = (_sbtn, _status_active_colors[_tag])
         # apply initial active appearance for "Pending"
         _init_btn, (_init_bg, _init_fg) = self._status_btns["Pending"]
@@ -755,14 +749,14 @@ class TaskManagerGUI:
         for tag, var in self.priority_active.items():
             var.set(False)
             btn, _ = self._priority_btns[tag]
-            btn.configure(bg="#141e33", fg="#3d5278")
+            btn.configure(bg=self._badge_inactive_bg, fg=self._badge_inactive_fg)
         for tag, var in self.status_active.items():
             var.set(tag == "Pending")
             btn, (active_bg, active_fg) = self._status_btns[tag]
             if tag == "Pending":
                 btn.configure(bg=active_bg, fg=active_fg)
             else:
-                btn.configure(bg="#141e33", fg="#3d5278")
+                btn.configure(bg=self._badge_inactive_bg, fg=self._badge_inactive_fg)
         self.refresh_tasks()
 
     def _toggle_priority(self, tag: str):
@@ -772,7 +766,7 @@ class TaskManagerGUI:
         if var.get():
             btn.configure(bg=active_bg, fg=active_fg)
         else:
-            btn.configure(bg="#141e33", fg="#3d5278")
+            btn.configure(bg=self._badge_inactive_bg, fg=self._badge_inactive_fg)
         self.refresh_tasks()
 
     def _toggle_status(self, tag: str):
@@ -782,7 +776,7 @@ class TaskManagerGUI:
         if var.get():
             btn.configure(bg=active_bg, fg=active_fg)
         else:
-            btn.configure(bg="#141e33", fg="#3d5278")
+            btn.configure(bg=self._badge_inactive_bg, fg=self._badge_inactive_fg)
         self.refresh_tasks()
 
     def _on_sort_column(self, column_name: str):
